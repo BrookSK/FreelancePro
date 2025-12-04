@@ -110,6 +110,8 @@
                         </div>
                     </div>
                     
+                    <div id="checkoutError" class="hidden bg-red-50 border border-red-200 text-red-700 rounded-lg p-3 text-sm"></div>
+
                     <button type="submit" id="submitBtn" class="w-full bg-blue-600 hover:bg-blue-700 text-white py-4 rounded-lg font-semibold transition flex items-center justify-center gap-2">
                         <i data-lucide="lock" class="w-5 h-5"></i>
                         Finalizar Assinatura
@@ -146,6 +148,8 @@ document.getElementById('checkoutForm').addEventListener('submit', async functio
     e.preventDefault();
     
     const btn = document.getElementById('submitBtn');
+    const err = document.getElementById('checkoutError');
+    if (err) { err.classList.add('hidden'); err.textContent=''; }
     btn.disabled = true;
     btn.innerHTML = '<span class="animate-spin">⏳</span> Processando...';
     
@@ -161,14 +165,36 @@ document.getElementById('checkoutForm').addEventListener('submit', async functio
         if (data.success) {
             window.location.href = data.redirect;
         } else {
-            alert(data.error || 'Erro ao processar pagamento');
+            if (err) { err.textContent = (data.error || 'Erro ao processar pagamento'); err.classList.remove('hidden'); }
+            try { console.error('Checkout error:', data); } catch(_){ }
             btn.disabled = false;
             btn.innerHTML = '<i data-lucide="lock" class="w-5 h-5"></i> Finalizar Assinatura';
         }
     } catch (error) {
-        alert('Erro ao processar requisição');
+        if (err) { err.textContent = 'Erro ao processar requisição'; err.classList.remove('hidden'); }
+        try { console.error('Checkout fetch error:', error); } catch(_){ }
         btn.disabled = false;
         btn.innerHTML = '<i data-lucide="lock" class="w-5 h-5"></i> Finalizar Assinatura';
     }
 });
+
+(function(){
+  function onlyDigits(v){ return (v||'').replace(/\D+/g,''); }
+  function maskCPF(v){ v=onlyDigits(v).slice(0,11); v=v.replace(/(\d{3})(\d)/,'$1.$2'); v=v.replace(/(\d{3})(\d)/,'$1.$2'); v=v.replace(/(\d{3})(\d{1,2})$/,'$1-$2'); return v; }
+  function maskPhone(v){ v=onlyDigits(v).slice(0,11); if(v.length>10){ return v.replace(/(\d{2})(\d{5})(\d{0,4})/,'($1) $2-$3').trim(); } return v.replace(/(\d{2})(\d{4})(\d{0,4})/,'($1) $2-$3').trim(); }
+  function maskCEP(v){ v=onlyDigits(v).slice(0,8); return v.replace(/(\d{5})(\d{0,3})/,'$1-$2').trim(); }
+  function maskCard(v){ v=onlyDigits(v).slice(0,16); return v.replace(/(\d{4})(?=\d)/g,'$1 ').trim(); }
+  function maskMonth(v){ v=onlyDigits(v).slice(0,2); if(v.length===2){ var n=parseInt(v,10); if(n===0) v='01'; else if(n>12) v='12'; else v=(n<10?('0'+n):(''+n)); } return v; }
+  function maskYear(v){ return onlyDigits(v).slice(0,4); }
+  function maskCVV(v){ return onlyDigits(v).slice(0,4); }
+  function attach(name, fn){ var el=document.querySelector('[name="'+name+'"]'); if(!el) return; el.addEventListener('input', function(){ var p=this.selectionStart; var raw=this.value; this.value=fn(this.value); }); }
+
+  attach('cpf', maskCPF);
+  attach('phone', maskPhone);
+  attach('zip_code', maskCEP);
+  attach('card_number', maskCard);
+  attach('card_month', maskMonth);
+  attach('card_year', maskYear);
+  attach('card_cvv', maskCVV);
+})();
 </script>

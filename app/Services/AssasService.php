@@ -67,11 +67,30 @@ class AssasService
         $result = json_decode($response, true);
 
         if ($httpCode >= 400) {
-            $errorMsg = $result['errors'][0]['description'] ?? $result['message'] ?? 'Erro desconhecido';
-            throw new \Exception("Erro ASSAS: {$errorMsg}");
+            $parts = [];
+            if (is_array($result)) {
+                if (isset($result['errors']) && is_array($result['errors'])) {
+                    foreach ($result['errors'] as $err) {
+                        $desc = $err['description'] ?? '';
+                        $code = $err['code'] ?? '';
+                        $parts[] = trim($desc . ($code ? " ({$code})" : ''));
+                    }
+                }
+                if (!empty($result['message'])) {
+                    $parts[] = $result['message'];
+                }
+            }
+            if (empty($parts)) {
+                $snippet = is_string($response) ? substr($response, 0, 300) : '';
+                $errorMsg = $snippet !== '' ? $snippet : 'Erro desconhecido';
+            } else {
+                $parts = array_values(array_unique(array_filter($parts)));
+                $errorMsg = implode(' | ', $parts);
+            }
+            throw new \Exception("Erro ASSAS ({$httpCode}): {$errorMsg}");
         }
 
-        return $result ?? [];
+        return is_array($result) ? $result : [];
     }
 
     public function createCustomer(array $data): array
