@@ -3,12 +3,28 @@
  * Configurações Gerais da Aplicação
  */
 
+$__baseUrl = (function () {
+    $scheme = 'http';
+    if (isset($_SERVER['HTTP_X_FORWARDED_PROTO'])) {
+        $scheme = $_SERVER['HTTP_X_FORWARDED_PROTO'];
+    } elseif (isset($_SERVER['HTTPS']) && (($_SERVER['HTTPS'] === 'on') || ($_SERVER['HTTPS'] === 1))) {
+        $scheme = 'https';
+    }
+    if (!isset($_SERVER['HTTP_HOST'])) {
+        return 'http://localhost:8080/site-freelancePro';
+    }
+    $host = $_SERVER['HTTP_HOST'];
+    $script = $_SERVER['SCRIPT_NAME'] ?? '';
+    $basePath = rtrim(str_replace('/public', '', dirname($script)), '/');
+    return rtrim($scheme . '://' . $host . $basePath, '/');
+})();
+
 return [
     // Nome da aplicação
     'name' => 'FreelancePro',
     
     // URL base da aplicação
-    'url' => 'http://localhost:8080/site-freelancePro',
+    'url' => $__baseUrl,
     
     // Ambiente: development ou production
     'environment' => 'development',
