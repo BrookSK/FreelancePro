@@ -100,6 +100,7 @@ document.getElementById('playbookForm').addEventListener('submit', async functio
         const formData = new FormData(form);
         const response = await fetch('<?= $this->url('playbooks/generate') ?>', {
             method: 'POST',
+            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             body: formData
         });
         const ct = response.headers.get('content-type') || '';

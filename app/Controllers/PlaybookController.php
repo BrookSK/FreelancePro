@@ -65,6 +65,8 @@ class PlaybookController extends Controller
             $this->json(['error' => 'Token inválido'], 400);
         }
 
+        @set_time_limit(120);
+
         $user = $this->currentUser();
         $title = trim($this->input('title'));
         $sourceType = $this->input('source_type', 'text');
@@ -122,11 +124,12 @@ class PlaybookController extends Controller
             $prompt .= "O playbook deve conter:\n";
             $prompt .= "1. Introdução\n";
             $prompt .= "2. Objetivos de aprendizagem\n";
-            $prompt .= "3. Conteúdo detalhado dividido em seções\n";
+            $prompt .= "3. Conteúdo dividido em seções curtas (2–3 parágrafos cada)\n";
             $prompt .= "4. Regras e políticas aplicáveis\n";
             $prompt .= "5. Boas práticas\n";
             $prompt .= "6. Conclusão\n\n";
-            $prompt .= "Formate em HTML bem estruturado com tags h2, h3, p, ul, li, etc.";
+            $prompt .= "Formate em HTML conciso e bem estruturado com tags h2, h3, p, ul, li, etc.\n";
+            $prompt .= "Limite total do conteúdo entre 800 e 1000 palavras.";
 
             $contentHtml = $aiService->generateContent($prompt, $user['id']);
 

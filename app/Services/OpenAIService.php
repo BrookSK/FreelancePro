@@ -11,13 +11,27 @@ use App\Models\AILog;
 class OpenAIService
 {
     protected string $apiKey;
-    protected string $model = 'gpt-4';
+    protected string $model = 'gpt-3.5-turbo';
     protected string $apiUrl = 'https://api.openai.com/v1/chat/completions';
+    protected int $maxTokens = 1200;
+    protected int $timeout = 90;
 
     public function __construct()
     {
         $config = new AdminConfig();
         $this->apiKey = $config->get('openai_api_key', '');
+        $configuredModel = $config->get('openai_model', '');
+        if (!empty($configuredModel)) {
+            $this->model = $configuredModel;
+        }
+        $configuredMax = (int) $config->get('openai_max_tokens', 0);
+        if ($configuredMax > 0) {
+            $this->maxTokens = $configuredMax;
+        }
+        $configuredTimeout = (int) $config->get('openai_timeout', 0);
+        if ($configuredTimeout > 0) {
+            $this->timeout = $configuredTimeout;
+        }
     }
 
     public function generateContent(string $prompt, int $userId, string $action = 'generate'): string
@@ -40,7 +54,7 @@ class OpenAIService
                     'content' => $prompt
                 ]
             ],
-            'max_tokens' => 4000,
+            'max_tokens' => $this->maxTokens,
             'temperature' => 0.7,
         ];
 
@@ -50,10 +64,12 @@ class OpenAIService
             CURLOPT_POST => true,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
+                'Accept: application/json',
                 'Authorization: Bearer ' . $this->apiKey,
             ],
             CURLOPT_POSTFIELDS => json_encode($data),
-            CURLOPT_TIMEOUT => 120,
+            CURLOPT_TIMEOUT => $this->timeout,
+            CURLOPT_CONNECTTIMEOUT => min(30, $this->timeout),
         ]);
 
         $response = curl_exec($ch);
