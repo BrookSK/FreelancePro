@@ -1,4 +1,11 @@
 <!-- Header -->
+<style>
+ .playbook-content h2 { margin-top: 1.25rem; margin-bottom: 0.5rem; font-size: 1.25rem; font-weight: 700; }
+ .playbook-content h3 { margin-top: 1rem; margin-bottom: 0.5rem; font-size: 1.125rem; font-weight: 600; }
+ .playbook-content p { margin: 0.5rem 0; line-height: 1.7; }
+ .playbook-content ul { margin: 0.5rem 0 0.75rem 1.25rem; list-style: disc; }
+ .playbook-content li { margin: 0.25rem 0; }
+</style>
 <div class="flex items-center justify-between mb-6">
     <div>
         <a href="<?= $this->url('playbooks') ?>" class="text-blue-600 hover:underline text-sm mb-2 inline-block">← Voltar aos Playbooks</a>
@@ -37,7 +44,7 @@
         <!-- Content -->
         <div class="bg-white rounded-xl shadow-sm p-6">
             <h2 class="text-lg font-semibold text-gray-800 mb-4">Conteúdo do Treinamento</h2>
-            <div class="prose max-w-none">
+            <div class="playbook-content prose max-w-none">
                 <?= $playbook['content_html'] ?>
             </div>
         </div>

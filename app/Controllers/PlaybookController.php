@@ -129,9 +129,27 @@ class PlaybookController extends Controller
             $prompt .= "5. Boas práticas\n";
             $prompt .= "6. Conclusão\n\n";
             $prompt .= "Formate em HTML conciso e bem estruturado com tags h2, h3, p, ul, li, etc.\n";
-            $prompt .= "Limite total do conteúdo entre 800 e 1000 palavras.";
+            $prompt .= "Limite total do conteúdo entre 800 e 1000 palavras.\n";
+            $prompt .= "Regras de formatação:\n";
+            $prompt .= "- Use exclusivamente tags HTML, sem Markdown.\n";
+            $prompt .= "- Não use <h1>; use <h2> para seções e <h3> para subseções.\n";
+            $prompt .= "- Cada parágrafo deve estar dentro de <p> com no máximo 2–3 frases.\n";
+            $prompt .= "- Use <ul>/<li> para objetivos, regras e boas práticas.\n";
+            $prompt .= "- Não inclua <html>, <head> ou <body>.\n";
+            $prompt .= "- Não inclua explicações fora do conteúdo.\n";
+            $prompt .= "Estrutura esperada (exemplo de marcação):\n";
+            $prompt .= "<h2>Introdução</h2><p>...</p><p>...</p>\n";
+            $prompt .= "<h2>Objetivos de aprendizagem</h2><ul><li>...</li></ul>\n";
+            $prompt .= "<h2>Conteúdo</h2>\n";
+            $prompt .= "<h3>Seção 1: ...</h3><p>...</p><ul><li>...</li></ul>\n";
+            $prompt .= "<h3>Seção 2: ...</h3><p>...</p>\n";
+            $prompt .= "<h3>Seção 3: ...</h3><p>...</p>\n";
+            $prompt .= "<h2>Regras e políticas aplicáveis</h2><ul><li>...</li></ul>\n";
+            $prompt .= "<h2>Boas práticas</h2><ul><li>...</li></ul>\n";
+            $prompt .= "<h2>Conclusão</h2><p>...</p>";
 
             $contentHtml = $aiService->generateContent($prompt, $user['id']);
+            $contentHtml = $this->normalizePlaybookHtml($contentHtml);
 
             // Gerar questionário
             $questionsPrompt = "Com base no seguinte conteúdo de treinamento, crie 10 perguntas de múltipla escolha (4 alternativas cada: A, B, C, D) para avaliar o aprendizado.\n\n";
@@ -257,6 +275,28 @@ class PlaybookController extends Controller
     }
 
     /**
+     * Reformatar/normalizar conteúdo HTML do playbook
+     */
+    public function reformat(int $id): void
+    {
+        $user = $this->currentUser();
+        $playbook = $this->playbookModel->find($id);
+
+        if (!$playbook || $playbook['company_id'] != $user['id']) {
+            $this->json(['error' => 'Playbook não encontrado'], 404);
+        }
+
+        $html = (string)($playbook['content_html'] ?? '');
+        $normalized = $this->normalizePlaybookHtml($html);
+
+        if ($normalized !== $html) {
+            $this->playbookModel->update($id, ['content_html' => $normalized]);
+        }
+
+        $this->json(['success' => true, 'message' => 'Conteúdo reformatado com sucesso!']);
+    }
+
+    /**
      * Página de atribuir playbook
      */
     public function assignPage(int $id): void
@@ -327,6 +367,76 @@ class PlaybookController extends Controller
             'success' => true,
             'message' => "{$assigned} funcionário(s) atribuído(s) com sucesso!",
         ]);
+    }
+
+    /**
+     * Normaliza HTML do playbook para garantir hierarquia (h2/h3), parágrafos curtos e listas
+     */
+    private function normalizePlaybookHtml(string $html): string
+    {
+        $text = trim($html);
+        if ($text === '') return '';
+
+        // Se veio sem tags HTML relevantes, converter de texto puro para HTML básico
+        $hasBlockTags = preg_match('/<(h[1-6]|p|ul|ol|li|div|section)\b/i', $text) === 1;
+        if (!$hasBlockTags) {
+            $lines = preg_split('/\r\n|\r|\n/', $text);
+            $out = '';
+            $openUl = false;
+            foreach ($lines as $raw) {
+                $line = trim($raw);
+                if ($line === '') {
+                    if ($openUl) { $out .= '</ul>'; $openUl = false; }
+                    continue;
+                }
+                // Títulos principais
+                if (preg_match('/^(Introdução|Objetivos de aprendizagem|Conteúdo|Regras e políticas aplicáveis|Boas práticas|Conclusão)\s*:?/i', $line)) {
+                    if ($openUl) { $out .= '</ul>'; $openUl = false; }
+                    $out .= '<h2>' . htmlspecialchars($line, ENT_QUOTES, 'UTF-8') . '</h2>';
+                    continue;
+                }
+                // Subtítulos de seção
+                if (preg_match('/^Seção\s*\d+\s*:\s*(.+)$/i', $line, $m)) {
+                    if ($openUl) { $out .= '</ul>'; $openUl = false; }
+                    $out .= '<h3>Seção ' . htmlspecialchars($m[0], ENT_QUOTES, 'UTF-8') . '</h3>';
+                    continue;
+                }
+                // Itens de lista
+                if (preg_match('/^([\-•\*])\s+(.+)$/u', $line, $m)) {
+                    if (!$openUl) { $out .= '<ul>'; $openUl = true; }
+                    $out .= '<li>' . htmlspecialchars($m[2], ENT_QUOTES, 'UTF-8') . '</li>';
+                    continue;
+                }
+                // Parágrafo padrão
+                $out .= '<p>' . htmlspecialchars($line, ENT_QUOTES, 'UTF-8') . '</p>';
+            }
+            if ($openUl) { $out .= '</ul>'; }
+            $text = $out;
+        }
+
+        // Normalizações em HTML existente
+        // h1 -> h2
+        $text = preg_replace('/<\s*h1\b([^>]*)>/i', '<h2$1>', $text);
+        $text = preg_replace('/<\s*\/\s*h1\s*>/i', '</h2>', $text);
+
+        // Envolver linhas soltas sem tag em <p>
+        $parts = preg_split('/(\r\n|\r|\n)/', $text);
+        if ($parts && count($parts) > 1) {
+            $rebuilt = '';
+            foreach ($parts as $ln) {
+                $trim = trim($ln);
+                if ($trim === '') { continue; }
+                if ($trim[0] !== '<') {
+                    // linha de texto solta
+                    $rebuilt .= '<p>' . htmlspecialchars($trim, ENT_QUOTES, 'UTF-8') . '</p>';
+                } else {
+                    $rebuilt .= $ln;
+                }
+            }
+            if ($rebuilt !== '') $text = $rebuilt;
+        }
+
+        return $text;
     }
 
     /**

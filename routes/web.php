@@ -37,6 +37,7 @@ $router->post('playbooks/generate', 'PlaybookController@generate', ['CompanyMidd
 $router->post('playbooks/transcribe', 'PlaybookController@transcribe', ['CompanyMiddleware']);
 $router->get('playbooks/{id}', 'PlaybookController@show', ['CompanyMiddleware']);
 $router->post('playbooks/{id}/publish', 'PlaybookController@publish', ['CompanyMiddleware']);
+$router->post('playbooks/{id}/reformat', 'PlaybookController@reformat', ['CompanyMiddleware']);
 $router->get('playbooks/{id}/assign', 'PlaybookController@assignPage', ['CompanyMiddleware']);
 $router->post('playbooks/{id}/assign', 'PlaybookController@assign', ['CompanyMiddleware']);
 $router->delete('playbooks/{id}', 'PlaybookController@delete', ['CompanyMiddleware']);
