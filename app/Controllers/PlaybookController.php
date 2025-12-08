@@ -9,6 +9,7 @@ use App\Models\PlaybookAssignment;
 use App\Models\PlaybookAnswer;
 use App\Models\User;
 use App\Models\Payment;
+use App\Models\Subscription;
 use App\Models\AdminConfig;
 use App\Services\OpenAIService;
 use App\Services\DocumentParser;
@@ -254,16 +255,38 @@ class PlaybookController extends Controller
             $this->json(['error' => 'Playbook não encontrado'], 404);
         }
 
-        // Verificar se precisa pagar
+        // Verificar franquia do plano antes de cobrar taxa
         $config = new AdminConfig();
-        $playbookFee = $config->get('playbook_fee', 19.90);
+        $playbookFee = (float) $config->get('playbook_fee', 19.90);
 
-        if (!$playbook['is_paid'] && $playbookFee > 0) {
+        $subscriptionModel = new Subscription();
+        $sub = $subscriptionModel->getActiveByCompany((int)$user['id']);
+        $planMax = isset($sub['plan_max_playbooks']) ? (int)$sub['plan_max_playbooks'] : 0; // 0/null = ilimitado
+
+        // Determinar período de cobrança
+        $startDate = $sub['current_period_start'] ?? null;
+        $endDate = $sub['current_period_end'] ?? null;
+        if (!$startDate || !$endDate) {
+            // fallback: mês atual
+            $startDate = date('Y-m-01');
+            $endDate = date('Y-m-t');
+        }
+        $startTs = $startDate . ' 00:00:00';
+        $endTs = $endDate . ' 23:59:59';
+
+        // Contabilizar playbooks publicados no período
+        $used = $this->playbookModel->countPublishedInPeriod((int)$user['id'], $startTs, $endTs);
+
+        $hasAllowance = ($planMax === 0 || $planMax === null) ? true : ($used < $planMax);
+
+        if (!$hasAllowance && !$playbook['is_paid'] && $playbookFee > 0) {
             $this->json([
                 'success' => false,
                 'requires_payment' => true,
                 'amount' => $playbookFee,
-                'message' => 'Este playbook requer pagamento para publicação.',
+                'used' => $used,
+                'limit' => $planMax,
+                'message' => 'Limite do plano atingido no período. É necessário pagamento avulso para publicar este playbook.',
             ]);
             return;
         }

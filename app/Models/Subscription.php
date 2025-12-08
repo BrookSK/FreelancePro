@@ -27,7 +27,7 @@ class Subscription extends Model
      */
     public function getActiveByCompany(int $companyId): ?array
     {
-        $sql = "SELECT s.*, p.name as plan_name, p.price as plan_price, p.features as plan_features
+        $sql = "SELECT s.*, p.name as plan_name, p.price as plan_price, p.features as plan_features, p.max_playbooks as plan_max_playbooks
                 FROM {$this->table} s
                 JOIN subscription_plans p ON s.plan_id = p.id
                 WHERE s.company_id = :company_id AND s.status = 'active'

@@ -45,6 +45,22 @@ class Playbook extends Model
     }
 
     /**
+     * Contar playbooks publicados no período (por empresa)
+     */
+    public function countPublishedInPeriod(int $companyId, string $start, string $end): int
+    {
+        $sql = "SELECT COUNT(*) as total FROM {$this->table}
+                WHERE company_id = :company_id AND status = 'published'
+                AND updated_at BETWEEN :start AND :end";
+        $result = $this->query($sql, [
+            'company_id' => $companyId,
+            'start' => $start,
+            'end' => $end,
+        ]);
+        return (int)($result[0]['total'] ?? 0);
+    }
+
+    /**
      * Contar playbooks da empresa
      */
     public function countByCompany(int $companyId): int
