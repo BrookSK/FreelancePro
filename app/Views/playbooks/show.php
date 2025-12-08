@@ -130,20 +130,32 @@ async function publishPlaybook() {
     try {
         const response = await fetch('<?= $this->url("playbooks/{$playbook['id']}/publish") ?>', {
             method: 'POST',
-            headers: {'Content-Type': 'application/json'}
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-Token': '<?= $csrf ?>'
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({})
         });
-        
-        const data = await response.json();
-        
-        if (data.requires_payment) {
-            alert('Este playbook requer pagamento de R$ ' + data.amount.toFixed(2));
-            return;
+        const ct = response.headers.get('content-type') || '';
+        let data = null, text = '';
+        if (ct.indexOf('application/json') !== -1) {
+            data = await response.json();
+        } else {
+            text = await response.text();
         }
         
-        if (data.success) {
+        if (data && data.requires_payment) {
+            const amount = Number(data.amount || 0);
+            alert('Este playbook requer pagamento de R$ ' + amount.toFixed(2));
+            return;
+        }
+        if (data && data.success) {
             location.reload();
         } else {
-            alert(data.error || 'Erro ao publicar');
+            alert((data && data.error) || text || 'Erro ao publicar');
         }
     } catch (error) {
         alert('Erro ao processar');

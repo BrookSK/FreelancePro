@@ -41,6 +41,7 @@ class PlaybookController extends Controller
         $this->view('playbooks/index', [
             'title' => 'Playbooks',
             'playbooks' => $playbooks,
+            'csrf' => $this->generateCsrfToken(),
         ]);
     }
 
@@ -237,6 +238,7 @@ class PlaybookController extends Controller
             'title' => $playbook['title'],
             'playbook' => $playbook,
             'assignments' => $assignments,
+            'csrf' => $this->generateCsrfToken(),
         ]);
     }
 
@@ -444,6 +446,9 @@ class PlaybookController extends Controller
      */
     public function delete(int $id): void
     {
+        if (!$this->validateCsrf()) {
+            $this->json(['error' => 'Token inválido'], 400);
+        }
         $user = $this->currentUser();
         $playbook = $this->playbookModel->find($id);
 
@@ -451,11 +456,15 @@ class PlaybookController extends Controller
             $this->json(['error' => 'Playbook não encontrado'], 404);
         }
 
-        $this->playbookModel->delete($id);
-
-        $this->json([
-            'success' => true,
-            'message' => 'Playbook excluído com sucesso!',
-        ]);
+        try {
+            // Apagar dependências
+            $this->questionModel->deleteByPlaybook($id);
+            $this->assignmentModel->deleteByPlaybook($id);
+            // Apagar playbook
+            $this->playbookModel->delete($id);
+            $this->json(['success' => true, 'message' => 'Playbook excluído com sucesso!']);
+        } catch (\Exception $e) {
+            $this->json(['error' => 'Falha ao excluir playbook: ' . $e->getMessage()], 500);
+        }
     }
 }

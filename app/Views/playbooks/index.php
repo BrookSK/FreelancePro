@@ -50,10 +50,41 @@
         </div>
         
         <div class="px-6 py-4 border-t bg-gray-50 rounded-b-xl flex items-center justify-between">
-            <a href="<?= $this->url("playbooks/{$playbook['id']}") ?>" class="text-blue-600 hover:underline text-sm">Ver detalhes</a>
-            <a href="<?= $this->url("playbooks/{$playbook['id']}/assign") ?>" class="text-emerald-600 hover:underline text-sm">Atribuir</a>
+            <div class="flex items-center gap-4">
+                <a href="<?= $this->url("playbooks/{$playbook['id']}") ?>" class="text-blue-600 hover:underline text-sm">Ver detalhes</a>
+                <a href="<?= $this->url("playbooks/{$playbook['id']}/assign") ?>" class="text-emerald-600 hover:underline text-sm">Atribuir</a>
+            </div>
+            <button onclick="deletePlaybook(<?= (int)$playbook['id'] ?>)" class="text-red-600 hover:underline text-sm">Excluir</button>
         </div>
     </div>
     <?php endforeach; ?>
 </div>
 <?php endif; ?>
+
+<script>
+async function deletePlaybook(id) {
+    if (!confirm('Tem certeza que deseja excluir este playbook?')) return;
+    try {
+        const resp = await fetch('<?= $this->url('playbooks/') ?>' + id, {
+            method: 'DELETE',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest',
+                'X-CSRF-Token': '<?= $csrf ?? '' ?>'
+            },
+            credentials: 'same-origin',
+            body: JSON.stringify({})
+        });
+        const ct = resp.headers.get('content-type') || '';
+        let data = null, text = '';
+        if (ct.indexOf('application/json') !== -1) data = await resp.json(); else text = await resp.text();
+        if (resp.ok && data && data.success) {
+            location.reload();
+        } else {
+            alert((data && data.error) || text || 'Erro ao excluir');
+        }
+    } catch (e) {
+        alert('Erro ao processar');
+    }
+}
+</script>
