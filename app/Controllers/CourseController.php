@@ -326,13 +326,14 @@ class CourseController extends Controller
     /**
      * Publicar curso
      */
-    public function publish(int $id): void
+    public function publish($id): void
     {
         if (!$this->validateCsrf()) {
             $this->json(['error' => 'Token inválido'], 400);
         }
 
         $user = $this->currentUser();
+        $id = (int) $id;
         $course = $this->courseModel->find($id);
 
         if (!$course || $course['company_id'] != $user['id']) {
