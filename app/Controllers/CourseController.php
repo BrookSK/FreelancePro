@@ -83,49 +83,9 @@ class CourseController extends Controller
         }
 
         try {
-            $aiService = new OpenAIService();
-
-            // Gerar estrutura do curso com conteúdo detalhado em HTML
-            $structurePrompt = "Você é um instrutor corporativo. Crie a estrutura COMPLETA de um curso online em português do Brasil sobre o tema abaixo.\n\n";
-            $structurePrompt .= "Título do curso: {$title}\n";
-            $structurePrompt .= "Descrição do curso: {$description}\n\n";
-            if (!empty($baseContent)) {
-                $structurePrompt .= "Conteúdo base / referências que devem ser usadas:\n" . mb_substr($baseContent, 0, 1500) . "\n\n";
-            }
-            $structurePrompt .= "Regras importantes:\n";
-            $structurePrompt .= "- O curso deve ter EXATAMENTE 4 módulos e CADA módulo deve ter EXATAMENTE 3 aulas.\n";
-            $structurePrompt .= "- Para cada aula, escreva um conteúdo HTML COMPLETO em português, com 3 a 4 parágrafos curtos, usando tags <h2>, <h3>, <p>, <ul>, <li>, etc.\n";
-            $structurePrompt .= "- O HTML deve ser autocontido, sem usar <html>, <head> ou <body>.\n";
-            $structurePrompt .= "- Não inclua explicações fora do JSON.\n";
-            $structurePrompt .= "- Seja conciso para evitar ultrapassar o limite de tokens.\n";
-            if ($videoSource === 'ai') {
-                $structurePrompt .= "Além disso, para cada aula indique também um campo video_url com uma URL COMPLETA de um vídeo público RELEVANTE e ALINHADO ao tema da aula no YouTube, em português do Brasil. Não escolha vídeos em outros idiomas (inglês, espanhol, etc.). Se não houver uma boa opção em português do Brasil, defina video_url como null. Prefira links cujo domínio seja https://www.youtube.com.br/.\n";
-                $structurePrompt .= "Retorne APENAS um JSON VÁLIDO no seguinte formato, sem markdown, sem comentários, sem texto antes ou depois:\n";
-                $structurePrompt .= '{"modules":[{"title":"título do módulo","description":"descrição do módulo","lessons":[{"title":"título da aula","content_html":"conteúdo HTML completo da aula","video_url":"https://www.youtube.com/..."}]}]}';
-            } else {
-                $structurePrompt .= "Retorne APENAS um JSON VÁLIDO no seguinte formato, sem markdown, sem comentários, sem texto antes ou depois:\n";
-                $structurePrompt .= '{"modules":[{"title":"título do módulo","description":"descrição do módulo","lessons":[{"title":"título da aula","content_html":"conteúdo HTML completo da aula"}]}]}';
-            }
-
-            try {
-                $structureJson = $aiService->generateContent($structurePrompt, $user['id']);
-
-                // Extrair JSON de forma robusta + fallback
-                $structure = $this->parseStructureJson($structureJson);
-                if (empty($structure['modules'])) {
-                    $retryPrompt = $structurePrompt . "\nIMPORTANTE: Responda SOMENTE com JSON válido exatamente no formato exigido (sem markdown). Reduza os textos (3-4 parágrafos por aula).";
-                    $structureJson = $aiService->generateContent($retryPrompt, $user['id'], 'course_structure_retry');
-                    $structure = $this->parseStructureJson($structureJson);
-                }
-            } catch (\Exception $ex) {
-                // Se der timeout/erro de API, continuamos com fallback abaixo
-                $structure = [];
-            }
-
-            if (empty($structure['modules'])) {
-                // Fallback: criar estrutura mínima sem depender da IA
-                $structure = $this->createSkeletonStructure($title);
-            }
+            // MODO RÁPIDO: evitar timeouts no /courses/generate
+            // Pula chamadas à IA e cria uma estrutura mínima (4x3) imediatamente.
+            $structure = $this->createSkeletonStructure($title);
 
             // Criar curso
             $courseId = $this->courseModel->create([
@@ -150,16 +110,8 @@ class CourseController extends Controller
                     $videoUrl = null;
                     if ($videoSource === 'ai') {
                         $candidate = $lessonData['video_url'] ?? null;
-                        $plain = strip_tags($lessonData['content_html'] ?? '');
                         if ($candidate && $this->isYoutubeUrl($candidate) && $this->isYoutubeVideoAvailable($candidate) && $this->isYoutubeVideoPortuguese($candidate)) {
                             $videoUrl = $candidate;
-                        } else {
-                            if ($plain === '') {
-                                $plain = trim(strip_tags(($moduleData['description'] ?? '') . ' ' . $description));
-                            }
-                            if ($plain !== '') {
-                                $videoUrl = $this->suggestYoutubePtBrVideo($title, $lessonData['title'] ?? '', $plain, $user['id']);
-                            }
                         }
                     }
 
@@ -172,19 +124,8 @@ class CourseController extends Controller
                     ]);
                 }
 
-                // Gerar questionário do módulo com IA
-                $moduleHtml = '';
-                foreach ($moduleData['lessons'] ?? [] as $lessonData) {
-                    $moduleHtml .= (string)($lessonData['content_html'] ?? '');
-                    $moduleHtml .= "\n\n";
-                }
-                if (trim(strip_tags($moduleHtml)) === '') {
-                    $moduleHtml = (string)($moduleData['description'] ?? '') . "\n" . $title . ' - ' . $description;
-                }
-                $questions = $this->generateModuleQuestions($moduleHtml, $user['id']);
-                if (empty($questions)) {
-                    $questions = $this->buildDefaultQuestions($moduleData['title'] ?? 'Módulo');
-                }
+                // Gerar questionário padrão (evita chamadas lentas à IA na criação)
+                $questions = $this->buildDefaultQuestions($moduleData['title'] ?? 'Módulo');
                 if (!empty($questions)) {
                     $courseQuestionModel = new CourseQuestion();
                     $courseQuestionModel->createBatch($moduleId, $questions);

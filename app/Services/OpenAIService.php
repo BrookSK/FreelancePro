@@ -34,7 +34,7 @@ class OpenAIService
         }
     }
 
-    public function generateContent(string $prompt, int $userId, string $action = 'generate'): string
+    public function generateContent(string $prompt, int $userId, string $action = 'generate', ?int $timeoutSeconds = null): string
     {
         if (empty($this->apiKey)) {
             throw new \Exception('Chave da API OpenAI não configurada.');
@@ -58,6 +58,9 @@ class OpenAIService
             'temperature' => 0.7,
         ];
 
+        $timeoutToUse = $timeoutSeconds !== null ? max(5, min($timeoutSeconds, $this->timeout)) : $this->timeout;
+        $connectTimeout = min(10, $timeoutToUse);
+
         $ch = curl_init($this->apiUrl);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
@@ -68,8 +71,8 @@ class OpenAIService
                 'Authorization: Bearer ' . $this->apiKey,
             ],
             CURLOPT_POSTFIELDS => json_encode($data),
-            CURLOPT_TIMEOUT => $this->timeout,
-            CURLOPT_CONNECTTIMEOUT => min(30, $this->timeout),
+            CURLOPT_TIMEOUT => $timeoutToUse,
+            CURLOPT_CONNECTTIMEOUT => $connectTimeout,
         ]);
 
         $response = curl_exec($ch);
