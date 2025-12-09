@@ -107,18 +107,24 @@ class CourseController extends Controller
                 $structurePrompt .= '{"modules":[{"title":"título do módulo","description":"descrição do módulo","lessons":[{"title":"título da aula","content_html":"conteúdo HTML completo da aula"}]}]}';
             }
 
-            $structureJson = $aiService->generateContent($structurePrompt, $user['id']);
+            try {
+                $structureJson = $aiService->generateContent($structurePrompt, $user['id']);
 
-            // Extrair JSON de forma robusta + fallback
-            $structure = $this->parseStructureJson($structureJson);
-            if (empty($structure['modules'])) {
-                $retryPrompt = $structurePrompt . "\nIMPORTANTE: Responda SOMENTE com JSON válido exatamente no formato exigido (sem markdown). Reduza os textos (3-4 parágrafos por aula).";
-                $structureJson = $aiService->generateContent($retryPrompt, $user['id'], 'course_structure_retry');
+                // Extrair JSON de forma robusta + fallback
                 $structure = $this->parseStructureJson($structureJson);
+                if (empty($structure['modules'])) {
+                    $retryPrompt = $structurePrompt . "\nIMPORTANTE: Responda SOMENTE com JSON válido exatamente no formato exigido (sem markdown). Reduza os textos (3-4 parágrafos por aula).";
+                    $structureJson = $aiService->generateContent($retryPrompt, $user['id'], 'course_structure_retry');
+                    $structure = $this->parseStructureJson($structureJson);
+                }
+            } catch (\Exception $ex) {
+                // Se der timeout/erro de API, continuamos com fallback abaixo
+                $structure = [];
             }
 
             if (empty($structure['modules'])) {
-                throw new \Exception('Não foi possível gerar a estrutura do curso');
+                // Fallback: criar estrutura mínima sem depender da IA
+                $structure = $this->createSkeletonStructure($title);
             }
 
             // Criar curso
@@ -147,7 +153,7 @@ class CourseController extends Controller
                         $plain = strip_tags($lessonData['content_html'] ?? '');
                         if ($candidate && $this->isYoutubeUrl($candidate) && $this->isYoutubeVideoAvailable($candidate) && $this->isYoutubeVideoPortuguese($candidate)) {
                             $videoUrl = $candidate;
-                        } else {
+                        } elseif ($plain !== '') {
                             $videoUrl = $this->suggestYoutubePtBrVideo($title, $lessonData['title'] ?? '', $plain, $user['id']);
                         }
                     }
@@ -230,18 +236,24 @@ class CourseController extends Controller
             $structurePrompt .= "Retorne APENAS um JSON VÁLIDO no seguinte formato, sem markdown, sem comentários, sem texto antes ou depois:\n";
             $structurePrompt .= '{"modules":[{"title":"título do módulo","description":"descrição do módulo","lessons":[{"title":"título da aula","content_html":"conteúdo HTML completo da aula","video_url":"https://www.youtube.com/..."}]}]}';
 
-            $structureJson = $aiService->generateContent($structurePrompt, $user['id'], 'regenerate_course');
+            try {
+                $structureJson = $aiService->generateContent($structurePrompt, $user['id'], 'regenerate_course');
 
-            // Extrair JSON de forma robusta + fallback
-            $structure = $this->parseStructureJson($structureJson);
-            if (empty($structure['modules'])) {
-                $retryPrompt = $structurePrompt . "\nIMPORTANTE: Responda SOMENTE com JSON válido exatamente no formato exigido (sem markdown). Reduza os textos (3-4 parágrafos por aula).";
-                $structureJson = $aiService->generateContent($retryPrompt, $user['id'], 'regenerate_course_retry');
+                // Extrair JSON de forma robusta + fallback
                 $structure = $this->parseStructureJson($structureJson);
+                if (empty($structure['modules'])) {
+                    $retryPrompt = $structurePrompt . "\nIMPORTANTE: Responda SOMENTE com JSON válido exatamente no formato exigido (sem markdown). Reduza os textos (3-4 parágrafos por aula).";
+                    $structureJson = $aiService->generateContent($retryPrompt, $user['id'], 'regenerate_course_retry');
+                    $structure = $this->parseStructureJson($structureJson);
+                }
+            } catch (\Exception $ex) {
+                // Se der timeout/erro de API, continuamos com fallback abaixo
+                $structure = [];
             }
 
             if (empty($structure['modules'])) {
-                throw new \Exception('Não foi possível gerar a nova estrutura do curso');
+                // Fallback: criar estrutura mínima sem depender da IA
+                $structure = $this->createSkeletonStructure($title);
             }
 
             // Remover módulos (e aulas/questões relacionadas via FK) atuais
@@ -264,7 +276,7 @@ class CourseController extends Controller
                     $videoUrl = null;
                     if ($candidate && $this->isYoutubeUrl($candidate) && $this->isYoutubeVideoAvailable($candidate) && $this->isYoutubeVideoPortuguese($candidate)) {
                         $videoUrl = $candidate;
-                    } else {
+                    } elseif ($plain !== '') {
                         $videoUrl = $this->suggestYoutubePtBrVideo($title, $lessonData['title'] ?? '', $plain, $user['id']);
                     }
 
@@ -798,6 +810,36 @@ class CourseController extends Controller
             }
         }
         return [];
+    }
+
+    /**
+     * Fallback: cria estrutura mínima de 4 módulos x 3 aulas sem depender da IA
+     */
+    protected function createSkeletonStructure(string $courseTitle): array
+    {
+        $modules = [];
+        $moduleTitles = [
+            'Introdução',
+            'Planejamento e Ferramentas',
+            'Construção na Prática',
+            'Publicação e Melhores Práticas'
+        ];
+        for ($i = 0; $i < 4; $i++) {
+            $lessons = [];
+            for ($j = 1; $j <= 3; $j++) {
+                $lessons[] = [
+                    'title' => 'Aula ' . $j . ': ' . $moduleTitles[$i],
+                    // conteúdo vazio para evitar tempo extra de geração; poderá ser editado depois
+                    'content_html' => ''
+                ];
+            }
+            $modules[] = [
+                'title' => 'Módulo ' . ($i + 1) . ': ' . $moduleTitles[$i] . ' - ' . $courseTitle,
+                'description' => 'Conteúdos essenciais sobre ' . $moduleTitles[$i] . '.',
+                'lessons' => $lessons,
+            ];
+        }
+        return ['modules' => $modules];
     }
 
     protected function suggestYoutubePtBrVideo(string $courseTitle, string $lessonTitle, string $plainContent, int $userId): ?string
