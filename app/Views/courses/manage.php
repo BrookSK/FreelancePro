@@ -119,6 +119,13 @@
                             <span>Regerar conteúdo com IA</span>
                         </button>
                     </form>
+                    <form method="POST" action="<?= $this->url("courses/{$course['id']}/fill-missing") ?>" onsubmit="return confirm('Preencher conteúdos ausentes pode levar alguns instantes. Deseja continuar?');">
+                        <input type="hidden" name="_token" value="<?= htmlspecialchars($csrf ?? '') ?>">
+                        <button type="submit" class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 transition">
+                            <i data-lucide="file-plus" class="w-4 h-4"></i>
+                            <span>Preencher conteúdos e quizzes ausentes</span>
+                        </button>
+                    </form>
                     <a href="<?= $this->url("courses/{$course['id']}/preview") ?>" class="w-full inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg border border-gray-300 text-sm text-gray-800 hover:bg-gray-50 transition">
                         <i data-lucide="eye" class="w-4 h-4"></i>
                         <span>Ver como o aluno verá o curso</span>

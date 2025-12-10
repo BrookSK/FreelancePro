@@ -349,6 +349,82 @@ class CourseController extends Controller
     }
 
     /**
+     * Preencher conteúdos e questionários ausentes
+     */
+    public function fillMissing($id): void
+    {
+        if (!$this->validateCsrf()) {
+            $this->flash('error', 'Token inválido. Tente novamente.');
+            $this->redirect('courses');
+        }
+
+        $user = $this->currentUser();
+        $id = (int) $id;
+        $course = $this->courseModel->find($id);
+
+        if (!$course || $course['company_id'] != $user['id']) {
+            $this->flash('error', 'Curso não encontrado.');
+            $this->redirect('courses');
+        }
+
+        $updatedLessons = 0;
+        $createdQuizzes = 0;
+
+        try {
+            $modules = $this->moduleModel->getByCourse($id);
+            $ai = new OpenAIService();
+
+            foreach ($modules as $module) {
+                $lessons = $this->lessonModel->getByModule((int)$module['id']);
+                foreach ($lessons as $lesson) {
+                    $current = trim((string)($lesson['content_html'] ?? ''));
+                    if ($current === '') {
+                        $prompt = "Escreva conteúdo HTML autocontido (sem <html>, <head> ou <body>) para uma aula de curso em português do Brasil.\n";
+                        $prompt .= "Curso: {$course['title']}\n";
+                        $prompt .= "Módulo: {$module['title']}\n";
+                        $prompt .= "Aula: {$lesson['title']}\n";
+                        $prompt .= "Use 3 a 4 parágrafos curtos com <h2>, <h3>, <p>, e listas quando útil. Responda apenas com HTML.";
+                        try {
+                            $html = $ai->generateContent($prompt, $user['id'], 'fill_lesson_content', 8);
+                            $html = trim((string)$html);
+                            if ($html !== '') {
+                                if (preg_match('/^```[\w-]*\s*/', $html)) {
+                                    $html = preg_replace('/^```[\w-]*\s*/', '', $html);
+                                    $html = preg_replace('/```\s*$/', '', $html);
+                                    $html = trim($html);
+                                }
+                                if ($html !== '') {
+                                    $this->lessonModel->update((int)$lesson['id'], ['content_html' => $html]);
+                                    $updatedLessons++;
+                                }
+                            }
+                        } catch (\Exception $e) {
+                            // ignorar falha desta aula
+                        }
+                    }
+                }
+
+                $existing = (new CourseQuestion())->getByModule((int)$module['id']);
+                if (empty($existing)) {
+                    $qs = $this->buildDefaultQuestions((string)$module['title']);
+                    if (!empty($qs)) {
+                        $cq = new CourseQuestion();
+                        $cq->createBatch((int)$module['id'], $qs);
+                        $createdQuizzes++;
+                    }
+                }
+            }
+
+            $this->courseModel->updateCounters($id);
+            $this->flash('success', "Conteúdo preenchido em {$updatedLessons} aula(s). Questionários criados: {$createdQuizzes}.");
+            $this->redirect("courses/{$id}/manage");
+        } catch (\Exception $e) {
+            $this->flash('error', 'Falha ao preencher conteúdos: ' . $e->getMessage());
+            $this->redirect("courses/{$id}/manage");
+        }
+    }
+
+    /**
      * Matricular funcionários
      */
     public function enroll(int $id): void

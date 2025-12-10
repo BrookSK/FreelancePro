@@ -54,6 +54,7 @@ $router->post('courses/lessons/{id}', 'CourseController@updateLesson', ['Company
 $router->post('courses/lessons/{id}/video', 'CourseController@updateLessonVideo', ['CompanyMiddleware']);
 $router->post('courses/{id}/publish', 'CourseController@publish', ['CompanyMiddleware']);
 $router->post('courses/{id}/regenerate', 'CourseController@regenerate', ['CompanyMiddleware']);
+$router->post('courses/{id}/fill-missing', 'CourseController@fillMissing', ['CompanyMiddleware']);
 $router->post('courses/{id}/enroll', 'CourseController@enroll', ['CompanyMiddleware']);
 $router->post('courses/enrollments/{id}/unlock', 'CourseController@unlockEnrollment', ['CompanyMiddleware']);
 $router->delete('courses/{id}', 'CourseController@delete', ['CompanyMiddleware']);
