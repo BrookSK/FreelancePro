@@ -16,7 +16,7 @@ class AuthMiddleware
         if (!isset($_SESSION['user']['id'])) {
             // Limpar resquício de sessões antigas que só usavam user_id
             unset($_SESSION['user_id']);
-            header('Location: /login');
+            header('Location: /site-freelancePro/login');
             exit;
         }
         

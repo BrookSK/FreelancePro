@@ -48,13 +48,8 @@
                         <i data-lucide="mic" class="w-5 h-5"></i>
                         <span>Iniciar Gravação</span>
                     </button>
-                    <div id="recordControls" class="hidden mt-4 flex items-center justify-center gap-3">
-                        <button type="button" id="pauseBtn" class="px-4 py-2 rounded-lg bg-yellow-500 text-white">Pausar</button>
-                        <button type="button" id="resumeBtn" class="px-4 py-2 rounded-lg bg-green-600 text-white hidden">Continuar</button>
-                        <button type="button" id="stopBtn" class="px-4 py-2 rounded-lg bg-gray-800 text-white">Finalizar</button>
-                    </div>
-                    <canvas id="waveCanvas" class="mx-auto mt-4" width="420" height="80"></canvas>
-                    <div id="audioError" class="hidden text-red-600 text-sm mt-3"></div>
+                    <p class="text-sm text-gray-500 mt-4">Ou faça upload de um arquivo de áudio (MP3, WAV)</p>
+                    <input type="file" name="audio" accept=".mp3,.wav,.ogg" class="mt-2">
                 </div>
             </div>
             
@@ -100,21 +95,15 @@ document.getElementById('playbookForm').addEventListener('submit', async functio
         const formData = new FormData(form);
         const response = await fetch('<?= $this->url('playbooks/generate') ?>', {
             method: 'POST',
-            headers: { 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
             body: formData
         });
-        const ct = response.headers.get('content-type') || '';
-        let data = null, text = '';
-        if (ct.indexOf('application/json') !== -1) {
-            data = await response.json();
-        } else {
-            text = await response.text();
-        }
-        if (response.ok && data && data.success) {
+        
+        const data = await response.json();
+        
+        if (data.success) {
             window.location.href = '<?= $this->url('playbooks/') ?>' + data.playbook_id;
         } else {
-            const errMsg = (data && (data.error || data.message)) || text || 'Erro ao gerar playbook';
-            alert(errMsg);
+            alert(data.error || 'Erro ao gerar playbook');
             form.classList.remove('hidden');
             loadingState.classList.add('hidden');
         }
@@ -124,43 +113,4 @@ document.getElementById('playbookForm').addEventListener('submit', async functio
         loadingState.classList.add('hidden');
     }
 });
-
-(function(){
-  var recordBtn=document.getElementById('recordBtn');
-  var pauseBtn=document.getElementById('pauseBtn');
-  var resumeBtn=document.getElementById('resumeBtn');
-  var stopBtn=document.getElementById('stopBtn');
-  var controls=document.getElementById('recordControls');
-  var wave=document.getElementById('waveCanvas');
-  var errorBox=document.getElementById('audioError');
-  var ctx=wave?wave.getContext('2d'):null;
-  var mediaRecorder=null; var chunks=[]; var audioCtx=null; var analyser=null; var source=null; var raf=0; var stream=null;
-  function draw(){
-    if(!analyser||!ctx) return; var w=wave.width, h=wave.height; var data=new Uint8Array(analyser.fftSize); analyser.getByteTimeDomainData(data); ctx.clearRect(0,0,w,h); ctx.fillStyle='#eef2ff'; ctx.fillRect(0,0,w,h); ctx.lineWidth=2; ctx.strokeStyle='#2563eb'; ctx.beginPath(); var slice=w/(data.length); var x=0; for(var i=0;i<data.length;i++){ var v=data[i]/128.0; var y=v*h/2; if(i===0){ ctx.moveTo(x,y);} else { ctx.lineTo(x,y);} x+=slice;} ctx.stroke(); raf=requestAnimationFrame(draw);
-  }
-  function stopVisual(){ if(raf) cancelAnimationFrame(raf); raf=0; if(audioCtx){ audioCtx.close().catch(function(){}); audioCtx=null; analyser=null; source=null; } }
-  function showError(t){ if(errorBox){ errorBox.textContent=t; errorBox.classList.remove('hidden'); } }
-  function clearError(){ if(errorBox){ errorBox.textContent=''; errorBox.classList.add('hidden'); } }
-  async function start(){
-    clearError();
-    try{
-      stream=await navigator.mediaDevices.getUserMedia({audio:true});
-      mediaRecorder=new MediaRecorder(stream);
-      chunks=[];
-      mediaRecorder.ondataavailable=function(e){ if(e.data && e.data.size>0){ chunks.push(e.data);} };
-      mediaRecorder.onstop=async function(){ try{ var blob=new Blob(chunks,{type:'audio/webm'}); var fd=new FormData(); fd.append('_token', document.querySelector('input[name="_token"]').value); fd.append('audio', blob, 'gravacao.webm'); var resp=await fetch('<?= $this->url('playbooks/transcribe') ?>',{method:'POST', body:fd}); var data=await resp.json(); if(data && data.success){ var ta=document.getElementById('content'); if(ta){ ta.value=(ta.value?ta.value+'\n\n':'')+data.text; } } else { showError((data&&data.error)||'Falha na transcrição'); } }catch(err){ showError('Erro ao enviar/transcrever'); } finally { if(stream){ stream.getTracks().forEach(function(t){t.stop();}); } stopVisual(); recordBtn.classList.remove('hidden'); controls.classList.add('hidden'); resumeBtn.classList.add('hidden'); pauseBtn.classList.remove('hidden'); } };
-      mediaRecorder.start();
-      audioCtx=new (window.AudioContext||window.webkitAudioContext)();
-      analyser=audioCtx.createAnalyser(); analyser.fftSize=2048; source=audioCtx.createMediaStreamSource(stream); source.connect(analyser); draw();
-      recordBtn.classList.add('hidden'); controls.classList.remove('hidden');
-    }catch(e){ showError('Permita o acesso ao microfone para gravar.'); }
-  }
-  function pause(){ if(mediaRecorder && mediaRecorder.state==='recording'){ mediaRecorder.pause(); pauseBtn.classList.add('hidden'); resumeBtn.classList.remove('hidden'); } }
-  function resume(){ if(mediaRecorder && mediaRecorder.state==='paused'){ mediaRecorder.resume(); resumeBtn.classList.add('hidden'); pauseBtn.classList.remove('hidden'); } }
-  function stop(){ if(mediaRecorder && (mediaRecorder.state==='recording'||mediaRecorder.state==='paused')){ mediaRecorder.stop(); } }
-  if(recordBtn){ recordBtn.addEventListener('click', start); }
-  if(pauseBtn){ pauseBtn.addEventListener('click', pause); }
-  if(resumeBtn){ resumeBtn.addEventListener('click', resume); }
-  if(stopBtn){ stopBtn.addEventListener('click', stop); }
-})();
 </script>

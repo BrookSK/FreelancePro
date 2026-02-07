@@ -5,19 +5,7 @@
     <?php if ($assignment['due_date']): ?>
     <p class="text-gray-500 mt-1">Prazo: <?= date('d/m/Y', strtotime($assignment['due_date'])) ?></p>
     <?php endif; ?>
-    <?php if (isset($maxAttempts)): ?>
-    <p class="text-gray-500 mt-1">Tentativas: <?= (int)($assignment['attempts'] ?? 0) ?> de <?= (int)$maxAttempts ?></p>
-    <?php endif; ?>
 </div>
-
-<?php if (!empty($locked)): ?>
-<div class="p-4 mb-6 rounded-lg bg-red-50 text-red-700 border border-red-200">
-    Limite de tentativas atingido. Solicite liberação ao gestor.
-    <?php if (!empty($assignment['score'])): ?>
-    <div class="mt-1 text-sm">Última nota: <?= number_format($assignment['score'], 1) ?>%</div>
-    <?php endif; ?>
-</div>
-<?php endif; ?>
 
 <?php if ($assignment['status'] === 'completed'): ?>
 <!-- Result Card -->
@@ -33,11 +21,7 @@
         <p class="text-gray-500 mt-2">Nota mínima: 70%</p>
         
         <?php if (!$assignment['passed']): ?>
-            <?php if (!empty($locked)): ?>
-                <p class="text-red-600 mt-4">Tentativas esgotadas. Solicite liberação ao gestor.</p>
-            <?php else: ?>
-                <p class="text-gray-600 mt-4">Você pode tentar novamente. Revise o conteúdo e refaça o questionário.</p>
-            <?php endif; ?>
+        <p class="text-gray-600 mt-4">Você pode tentar novamente. Revise o conteúdo e refaça o questionário.</p>
         <?php endif; ?>
     </div>
 </div>
@@ -52,7 +36,7 @@
 </div>
 
 <!-- Quiz -->
-<?php if (!empty($playbook['questions']) && ($assignment['status'] !== 'completed' || !$assignment['passed']) && empty($locked)): ?>
+<?php if (!empty($playbook['questions']) && ($assignment['status'] !== 'completed' || !$assignment['passed'])): ?>
 <div class="bg-white rounded-xl shadow-sm p-8">
     <h2 class="text-lg font-semibold text-gray-800 mb-6">Questionário</h2>
     
@@ -103,9 +87,6 @@ document.getElementById('quizForm')?.addEventListener('submit', async function(e
         
         if (data.success) {
             alert(data.message);
-            location.reload();
-        } else if (data.locked) {
-            alert(data.error || 'Limite de tentativas atingido.');
             location.reload();
         } else {
             alert(data.error || 'Erro ao enviar');

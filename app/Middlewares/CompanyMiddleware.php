@@ -15,12 +15,12 @@ class CompanyMiddleware
         // Usuário precisa ter sessão completa
         if (!isset($_SESSION['user']['id'])) {
             unset($_SESSION['user_id']);
-            header('Location: /login');
+            header('Location: /site-freelancePro/login');
             exit;
         }
         
         if (($_SESSION['user']['user_type'] ?? '') !== 'company') {
-            header('Location: /login');
+            header('Location: /site-freelancePro/login');
             exit;
         }
         

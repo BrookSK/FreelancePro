@@ -11,7 +11,7 @@
         <h1 class="text-9xl font-bold text-gray-300">500</h1>
         <h2 class="text-2xl font-semibold text-gray-800 mt-4">Erro interno do servidor</h2>
         <p class="text-gray-600 mt-2">Algo deu errado. Tente novamente mais tarde.</p>
-        <a href="/" class="inline-block mt-6 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition">
+        <a href="/site-freelancePro" class="inline-block mt-6 bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg transition">
             Voltar ao início
         </a>
     </div>

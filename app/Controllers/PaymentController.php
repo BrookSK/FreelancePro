@@ -90,16 +90,6 @@ class PaymentController extends Controller
             // Modo real: integração com ASSAS
             $assas = new AssasService();
 
-            // Cancelar assinatura ativa existente antes de criar nova (evita duplicidade)
-            $existing = $this->subscriptionModel->getActiveByCompany($user['id']);
-            if ($existing) {
-                $assasId = (string)($existing['assas_subscription_id'] ?? '');
-                if ($assasId !== '' && substr($assasId, 0, 10) !== 'SIMULATED-') {
-                    $assas->cancelSubscription($assasId);
-                }
-                $this->subscriptionModel->cancel($existing['id']);
-            }
-
             // Criar/atualizar cliente no ASSAS
             $customerData = [
                 'name' => $this->input('name'),
@@ -113,27 +103,7 @@ class PaymentController extends Controller
                 'province' => $this->input('neighborhood'),
             ];
 
-            $customer = $assas->findCustomerByEmail($customerData['email']);
-            if (!$customer) {
-                $customer = $assas->createCustomer($customerData);
-            }
-
-            // Garantir que não existam assinaturas ativas no ASSAS para este cliente
-            $assasActives = $assas->listSubscriptionsByCustomer($customer['id'], 'ACTIVE');
-            $assasActiveList = $assasActives['data'] ?? [];
-            foreach ($assasActiveList as $asub) {
-                if (!empty($asub['id'])) {
-                    $assas->cancelSubscription($asub['id']);
-                    // Refletir cancelamento no banco local, se existir registro
-                    $rows = $this->subscriptionModel->query(
-                        "SELECT id FROM company_subscriptions WHERE assas_subscription_id = :assas AND company_id = :company_id AND status = 'active' LIMIT 10",
-                        ['assas' => $asub['id'], 'company_id' => $user['id']]
-                    );
-                    foreach ($rows as $r) {
-                        $this->subscriptionModel->cancel((int)$r['id']);
-                    }
-                }
-            }
+            $customer = $assas->createCustomer($customerData);
 
             // Criar assinatura
             $subscriptionData = [
@@ -206,12 +176,6 @@ class PaymentController extends Controller
         $this->view('payments/failure', ['title' => 'Falha no Pagamento']);
     }
 
-    public function cancelled(): void
-    {
-        $this->setLayout('dashboard');
-        $this->view('payments/cancelled', ['title' => 'Assinatura Cancelada']);
-    }
-
     public function history(): void
     {
         $user = $this->currentUser();
@@ -241,37 +205,28 @@ class PaymentController extends Controller
         $user = $this->currentUser();
         $subscription = $this->subscriptionModel->getActiveByCompany($user['id']);
 
-        $isAjax = (strtolower($_SERVER['HTTP_X_REQUESTED_WITH'] ?? '') === 'xmlhttprequest')
-            || (stripos($_SERVER['HTTP_ACCEPT'] ?? '', 'application/json') !== false);
-
         if (!$subscription) {
-            if ($isAjax) { $this->json(['error' => 'Assinatura não encontrada'], 404); }
-            $this->flash('error', 'Assinatura não encontrada.');
-            $this->redirect('subscription');
+            $this->json(['error' => 'Assinatura não encontrada'], 404);
         }
 
         try {
             $configModel = new AdminConfig();
             $assasApiKey = $configModel->get('assas_api_key', '');
 
+            // Cancelamento simulado (sem integração ASSAS)
             if (empty($assasApiKey) || substr((string)($subscription['assas_subscription_id'] ?? ''), 0, 10) === 'SIMULATED-') {
                 $this->subscriptionModel->cancel($subscription['id']);
-                if ($isAjax) { $this->json(['success' => true, 'message' => 'Assinatura cancelada (simulação).']); }
-                $this->flash('success', 'Assinatura cancelada.');
-                $this->redirect('subscription/cancelled');
+                $this->json(['success' => true, 'message' => 'Assinatura cancelada (simulação).']);
             }
 
+            // Cancelamento real via ASSAS
             $assas = new AssasService();
             $assas->cancelSubscription($subscription['assas_subscription_id']);
             $this->subscriptionModel->cancel($subscription['id']);
 
-            if ($isAjax) { $this->json(['success' => true, 'message' => 'Assinatura cancelada.']); }
-            $this->flash('success', 'Assinatura cancelada.');
-            $this->redirect('subscription/cancelled');
+            $this->json(['success' => true, 'message' => 'Assinatura cancelada.']);
         } catch (\Exception $e) {
-            if ($isAjax) { $this->json(['error' => $e->getMessage()], 500); }
-            $this->flash('error', $e->getMessage());
-            $this->redirect('subscription');
+            $this->json(['error' => $e->getMessage()], 500);
         }
     }
 

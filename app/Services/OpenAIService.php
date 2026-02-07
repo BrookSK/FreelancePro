@@ -11,30 +11,16 @@ use App\Models\AILog;
 class OpenAIService
 {
     protected string $apiKey;
-    protected string $model = 'gpt-3.5-turbo';
+    protected string $model = 'gpt-4';
     protected string $apiUrl = 'https://api.openai.com/v1/chat/completions';
-    protected int $maxTokens = 1200;
-    protected int $timeout = 90;
 
     public function __construct()
     {
         $config = new AdminConfig();
         $this->apiKey = $config->get('openai_api_key', '');
-        $configuredModel = $config->get('openai_model', '');
-        if (!empty($configuredModel)) {
-            $this->model = $configuredModel;
-        }
-        $configuredMax = (int) $config->get('openai_max_tokens', 0);
-        if ($configuredMax > 0) {
-            $this->maxTokens = $configuredMax;
-        }
-        $configuredTimeout = (int) $config->get('openai_timeout', 0);
-        if ($configuredTimeout > 0) {
-            $this->timeout = $configuredTimeout;
-        }
     }
 
-    public function generateContent(string $prompt, int $userId, string $action = 'generate', ?int $timeoutSeconds = null): string
+    public function generateContent(string $prompt, int $userId, string $action = 'generate'): string
     {
         if (empty($this->apiKey)) {
             throw new \Exception('Chave da API OpenAI não configurada.');
@@ -54,12 +40,9 @@ class OpenAIService
                     'content' => $prompt
                 ]
             ],
-            'max_tokens' => $this->maxTokens,
+            'max_tokens' => 4000,
             'temperature' => 0.7,
         ];
-
-        $timeoutToUse = $timeoutSeconds !== null ? max(5, min($timeoutSeconds, $this->timeout)) : $this->timeout;
-        $connectTimeout = min(10, $timeoutToUse);
 
         $ch = curl_init($this->apiUrl);
         curl_setopt_array($ch, [
@@ -67,12 +50,10 @@ class OpenAIService
             CURLOPT_POST => true,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
-                'Accept: application/json',
                 'Authorization: Bearer ' . $this->apiKey,
             ],
             CURLOPT_POSTFIELDS => json_encode($data),
-            CURLOPT_TIMEOUT => $timeoutToUse,
-            CURLOPT_CONNECTTIMEOUT => $connectTimeout,
+            CURLOPT_TIMEOUT => 120,
         ]);
 
         $response = curl_exec($ch);

@@ -13,12 +13,12 @@ class AdminMiddleware
     public function handle(): bool
     {
         if (!isset($_SESSION['user_id'])) {
-            header('Location: /login');
+            header('Location: /site-freelancePro/login');
             exit;
         }
         
         if (($_SESSION['user']['user_type'] ?? '') !== 'admin') {
-            header('Location: /dashboard');
+            header('Location: /site-freelancePro/dashboard');
             exit;
         }
         

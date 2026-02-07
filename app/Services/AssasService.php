@@ -38,11 +38,9 @@ class AssasService
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_HTTPHEADER => [
                 'Content-Type: application/json',
-                'Accept: application/json',
                 'access_token: ' . $this->apiKey,
             ],
             CURLOPT_TIMEOUT => 60,
-            CURLOPT_USERAGENT => 'FreelancePro/1.0',
         ];
 
         if ($method === 'POST') {
@@ -69,30 +67,11 @@ class AssasService
         $result = json_decode($response, true);
 
         if ($httpCode >= 400) {
-            $parts = [];
-            if (is_array($result)) {
-                if (isset($result['errors']) && is_array($result['errors'])) {
-                    foreach ($result['errors'] as $err) {
-                        $desc = $err['description'] ?? '';
-                        $code = $err['code'] ?? '';
-                        $parts[] = trim($desc . ($code ? " ({$code})" : ''));
-                    }
-                }
-                if (!empty($result['message'])) {
-                    $parts[] = $result['message'];
-                }
-            }
-            if (empty($parts)) {
-                $snippet = is_string($response) ? substr($response, 0, 300) : '';
-                $errorMsg = $snippet !== '' ? $snippet : 'Erro desconhecido';
-            } else {
-                $parts = array_values(array_unique(array_filter($parts)));
-                $errorMsg = implode(' | ', $parts);
-            }
-            throw new \Exception("Erro ASSAS ({$httpCode}): {$errorMsg}");
+            $errorMsg = $result['errors'][0]['description'] ?? $result['message'] ?? 'Erro desconhecido';
+            throw new \Exception("Erro ASSAS: {$errorMsg}");
         }
 
-        return is_array($result) ? $result : [];
+        return $result ?? [];
     }
 
     public function createCustomer(array $data): array
@@ -128,13 +107,7 @@ class AssasService
 
     public function cancelSubscription(string $subscriptionId): array
     {
-        return $this->request('POST', "/subscriptions/{$subscriptionId}/cancel", []);
-    }
-
-    public function listSubscriptionsByCustomer(string $customerId, string $status = 'ACTIVE'): array
-    {
-        $statusParam = $status !== '' ? "&status={$status}" : '';
-        return $this->request('GET', "/subscriptions?customer={$customerId}{$statusParam}");
+        return $this->request('DELETE', "/subscriptions/{$subscriptionId}");
     }
 
     public function createPayment(array $data): array

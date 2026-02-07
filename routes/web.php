@@ -34,10 +34,8 @@ $router->get('dashboard', 'DashboardController@index', ['CompanyMiddleware']);
 $router->get('playbooks', 'PlaybookController@index', ['CompanyMiddleware']);
 $router->get('playbooks/create', 'PlaybookController@create', ['CompanyMiddleware']);
 $router->post('playbooks/generate', 'PlaybookController@generate', ['CompanyMiddleware']);
-$router->post('playbooks/transcribe', 'PlaybookController@transcribe', ['CompanyMiddleware']);
 $router->get('playbooks/{id}', 'PlaybookController@show', ['CompanyMiddleware']);
 $router->post('playbooks/{id}/publish', 'PlaybookController@publish', ['CompanyMiddleware']);
-$router->post('playbooks/{id}/reformat', 'PlaybookController@reformat', ['CompanyMiddleware']);
 $router->get('playbooks/{id}/assign', 'PlaybookController@assignPage', ['CompanyMiddleware']);
 $router->post('playbooks/{id}/assign', 'PlaybookController@assign', ['CompanyMiddleware']);
 $router->delete('playbooks/{id}', 'PlaybookController@delete', ['CompanyMiddleware']);
@@ -54,9 +52,7 @@ $router->post('courses/lessons/{id}', 'CourseController@updateLesson', ['Company
 $router->post('courses/lessons/{id}/video', 'CourseController@updateLessonVideo', ['CompanyMiddleware']);
 $router->post('courses/{id}/publish', 'CourseController@publish', ['CompanyMiddleware']);
 $router->post('courses/{id}/regenerate', 'CourseController@regenerate', ['CompanyMiddleware']);
-$router->post('courses/{id}/fill-missing', 'CourseController@fillMissing', ['CompanyMiddleware']);
 $router->post('courses/{id}/enroll', 'CourseController@enroll', ['CompanyMiddleware']);
-$router->post('courses/enrollments/{id}/unlock', 'CourseController@unlockEnrollment', ['CompanyMiddleware']);
 $router->delete('courses/{id}', 'CourseController@delete', ['CompanyMiddleware']);
 
 // Funcionários
@@ -93,7 +89,6 @@ $router->get('payment/success', 'PaymentController@success', ['CompanyMiddleware
 $router->get('payment/failure', 'PaymentController@failure', ['CompanyMiddleware']);
 $router->get('payment/history', 'PaymentController@history', ['CompanyMiddleware']);
 $router->get('subscription', 'PaymentController@subscription', ['CompanyMiddleware']);
-$router->get('subscription/cancelled', 'PaymentController@cancelled', ['CompanyMiddleware']);
 $router->post('subscription/cancel', 'PaymentController@cancelSubscription', ['CompanyMiddleware']);
 
 // ==========================================
@@ -108,8 +103,6 @@ $router->get('employee/courses', 'EmployeePanelController@courses', ['EmployeeMi
 $router->get('employee/courses/{id}', 'EmployeePanelController@viewCourse', ['EmployeeMiddleware']);
 $router->get('employee/lessons/{id}', 'EmployeePanelController@viewLesson', ['EmployeeMiddleware']);
 $router->post('employee/lessons/{id}/complete', 'EmployeePanelController@completeLesson', ['EmployeeMiddleware']);
-$router->get('employee/courses/{courseId}/modules/{moduleId}/quiz', 'EmployeePanelController@moduleQuiz', ['EmployeeMiddleware']);
-$router->post('employee/courses/{courseId}/modules/{moduleId}/quiz', 'EmployeePanelController@submitModuleQuiz', ['EmployeeMiddleware']);
 
 // ==========================================
 // ROTAS DO PROFISSIONAL (PROFESSIONAL)

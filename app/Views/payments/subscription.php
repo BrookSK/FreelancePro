@@ -63,7 +63,7 @@
 
         <div class="bg-white rounded-xl shadow-sm p-6 flex items-center justify-between mt-4">
             <div>
-                <p class="text-sm text-gray-600">Para alterar ou cancelar sua assinatura, entre em contato com o suporte ou use o botão abaixo.</p>
+                <p class="text-sm text-gray-600">Para alterar ou cancelar sua assinatura, entre em contato com o suporte ou use o botão abaixo (se configurado).</p>
             </div>
             <form method="POST" action="<?= $this->url('subscription/cancel') ?>" onsubmit="return confirm('Tem certeza que deseja cancelar sua assinatura?');">
                 <button type="submit" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-red-50 text-red-700 text-sm hover:bg-red-100 transition">

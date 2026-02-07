@@ -11,11 +11,6 @@ use App\Models\PlaybookQuestion;
 use App\Models\CourseEnrollment;
 use App\Models\Course;
 use App\Models\CourseLesson;
-use App\Models\CourseModule;
-use App\Models\CourseQuestion;
-use App\Models\CourseAnswer;
-use App\Models\CourseModuleResult;
-use App\Models\CompanySetting;
 
 /**
  * EmployeePanelController - Área do Funcionário
@@ -85,11 +80,6 @@ class EmployeePanelController extends Controller
         $playbookModel = new Playbook();
         $playbook = $playbookModel->getWithQuestions($assignment['playbook_id']);
 
-        // Verificar bloqueio por tentativas (config por empresa)
-        $settings = new CompanySetting();
-        $maxAttemptsPlaybook = (int) ($settings->get((int)$playbook['company_id'], 'max_attempts_playbook', 3));
-        $locked = ((int)($assignment['attempts'] ?? 0) >= $maxAttemptsPlaybook) && (int)($assignment['passed'] ?? 0) !== 1;
-
         // Marcar como iniciado se pendente
         if ($assignment['status'] === 'pending') {
             $assignmentModel->start($assignmentId);
@@ -106,8 +96,6 @@ class EmployeePanelController extends Controller
             'playbook' => $playbook,
             'assignment' => $assignment,
             'previousAnswers' => $previousAnswers,
-            'maxAttempts' => $maxAttemptsPlaybook,
-            'locked' => $locked,
             'csrf' => $this->generateCsrfToken(),
         ]);
     }
@@ -128,16 +116,6 @@ class EmployeePanelController extends Controller
 
         if (!$assignment || $assignment['employee_id'] != $user['id']) {
             $this->json(['error' => 'Treinamento não encontrado'], 404);
-        }
-
-        // Limite de tentativas para playbooks
-        $playbookModel = new Playbook();
-        $playbook = $playbookModel->find($assignment['playbook_id']);
-        $settings = new CompanySetting();
-        $maxAttemptsPlaybook = (int) ($settings->get((int)$playbook['company_id'], 'max_attempts_playbook', 3));
-        $attemptsUsed = (int) ($assignment['attempts'] ?? 0);
-        if ($attemptsUsed >= $maxAttemptsPlaybook && (int)($assignment['passed'] ?? 0) !== 1) {
-            $this->json(['error' => 'Limite de tentativas atingido. Solicite liberação ao gestor.', 'locked' => true], 403);
         }
 
         $answers = $this->input('answers', []);
@@ -173,22 +151,16 @@ class EmployeePanelController extends Controller
         $score = $answerModel->calculateScore($assignmentId);
         $passed = $score >= 70; // 70% para aprovação
 
-        // Registrar tentativa mantendo status adequado
-        $assignmentModel->recordAttempt($assignmentId, $score, $passed);
-
-        $attemptsAfter = $attemptsUsed + 1;
-        $locked = (!$passed && $attemptsAfter >= $maxAttemptsPlaybook);
+        // Completar treinamento
+        $assignmentModel->complete($assignmentId, $score, $passed);
 
         $this->json([
             'success' => true,
             'score' => $score,
             'passed' => $passed,
-            'attempts' => $attemptsAfter,
-            'max_attempts' => $maxAttemptsPlaybook,
-            'locked' => $locked,
             'message' => $passed 
                 ? "Parabéns! Você foi aprovado com {$score}%!" 
-                : ($locked ? "Você obteve {$score}%. Limite de tentativas atingido. Solicite liberação ao gestor." : "Você obteve {$score}%. Nota mínima: 70%. Tente novamente."),
+                : "Você obteve {$score}%. Nota mínima: 70%. Tente novamente.",
         ]);
     }
 
@@ -254,33 +226,6 @@ class EmployeePanelController extends Controller
         // Verificar matrícula
         // ... (verificação adicional)
 
-        // Gate: matrícula bloqueada ou módulo anterior não aprovado
-        $moduleModel = new CourseModule();
-        $courseModel = new Course();
-        $enrollmentModel = new CourseEnrollment();
-        $module = $moduleModel->find((int)$lesson['module_id']);
-        if ($module) {
-            $enrollment = $enrollmentModel->getEnrollment((int)$module['course_id'], $user['id']);
-            if (!$enrollment) {
-                $this->flash('error', 'Você não está matriculado neste curso.');
-                $this->redirect('employee/courses');
-            }
-            if (!empty($enrollment['is_locked'])) {
-                $this->flash('error', 'Sua matrícula está bloqueada. Solicite liberação ao gestor.');
-                $this->redirect('employee/courses/' . (int)$module['course_id']);
-            }
-            $rows = $courseModel->query(
-                "SELECT COUNT(*) as pending FROM course_modules m
-                 LEFT JOIN course_module_results r ON r.module_id = m.id AND r.enrollment_id = :e
-                 WHERE m.course_id = :c AND m.order_number < :ord AND (r.passed IS NULL OR r.passed = 0)",
-                ['e' => $enrollment['id'], 'c' => $module['course_id'], 'ord' => $module['order_number']]
-            );
-            if ((int)($rows[0]['pending'] ?? 0) > 0) {
-                $this->flash('error', 'Você precisa ser aprovado no módulo anterior antes de continuar.');
-                $this->redirect('employee/courses/' . (int)$module['course_id']);
-            }
-        }
-
         // Buscar próxima aula
         $nextLesson = $lessonModel->getNextLesson($lessonId);
 
@@ -289,146 +234,6 @@ class EmployeePanelController extends Controller
             'title' => $lesson['title'],
             'lesson' => $lesson,
             'nextLesson' => $nextLesson,
-        ]);
-    }
-
-    /**
-     * Quiz de módulo do curso (exibição)
-     */
-    public function moduleQuiz(int $courseId, int $moduleId): void
-    {
-        $user = $this->currentUser();
-        $enrollmentModel = new CourseEnrollment();
-        $enrollment = $enrollmentModel->getEnrollment($courseId, $user['id']);
-        if (!$enrollment) {
-            $this->flash('error', 'Você não está matriculado neste curso.');
-            $this->redirect('employee/courses');
-        }
-        if (!empty($enrollment['is_locked'])) {
-            $this->flash('error', 'Sua matrícula está bloqueada. Solicite liberação ao gestor.');
-            $this->redirect('employee/courses/' . $courseId);
-        }
-
-        $courseModel = new Course();
-        $moduleModel = new CourseModule();
-        $module = $moduleModel->find($moduleId);
-        if (!$module) {
-            $this->flash('error', 'Módulo não encontrado.');
-            $this->redirect('employee/courses/' . $courseId);
-        }
-
-        // Gating: precisa passar módulos anteriores
-        $prevCountRows = $courseModel->query(
-            "SELECT COUNT(*) as pending FROM course_modules m
-             LEFT JOIN course_module_results r ON r.module_id = m.id AND r.enrollment_id = :e
-             WHERE m.course_id = :c AND m.order_number < :ord AND (r.passed IS NULL OR r.passed = 0)",
-            ['e' => $enrollment['id'], 'c' => $courseId, 'ord' => $module['order_number']]
-        );
-        if ((int)($prevCountRows[0]['pending'] ?? 0) > 0) {
-            $this->flash('error', 'Você precisa ser aprovado no módulo anterior antes de continuar.');
-            $this->redirect('employee/courses/' . $courseId);
-        }
-
-        $questionModel = new CourseQuestion();
-        $questions = $questionModel->getByModule($moduleId);
-
-        $settings = new CompanySetting();
-        $course = $courseModel->find($courseId);
-        $maxAttempts = (int) ($settings->get((int)$course['company_id'], 'max_attempts_course', 3));
-        $resultModel = new CourseModuleResult();
-        $result = $resultModel->getResult((int)$enrollment['id'], (int)$moduleId);
-
-        $this->setLayout('course');
-        $this->view('employee/module-quiz', [
-            'title' => 'Avaliação do Módulo',
-            'course' => $course,
-            'module' => $module,
-            'questions' => $questions,
-            'enrollment' => $enrollment,
-            'result' => $result,
-            'maxAttempts' => $maxAttempts,
-            'csrf' => $this->generateCsrfToken(),
-        ]);
-    }
-
-    /**
-     * Submeter quiz do módulo (JSON)
-     */
-    public function submitModuleQuiz(int $courseId, int $moduleId): void
-    {
-        if (!$this->validateCsrf()) {
-            $this->json(['error' => 'Token inválido'], 400);
-        }
-        $user = $this->currentUser();
-        $enrollmentModel = new CourseEnrollment();
-        $enrollment = $enrollmentModel->getEnrollment($courseId, $user['id']);
-        if (!$enrollment) {
-            $this->json(['error' => 'Matrícula não encontrada'], 404);
-        }
-        if (!empty($enrollment['is_locked'])) {
-            $this->json(['error' => 'Matrícula bloqueada. Solicite liberação ao gestor.'], 403);
-        }
-
-        $questionModel = new CourseQuestion();
-        $questions = $questionModel->getByModule($moduleId);
-        if (empty($questions)) {
-            $this->json(['error' => 'Não há questões para este módulo'], 400);
-        }
-
-        // Respostas do usuário
-        $inputAnswers = $this->input('answers', []);
-        $processed = [];
-        foreach ($questions as $q) {
-            $sel = $inputAnswers[$q['id']] ?? null;
-            if ($sel) {
-                $processed[] = [
-                    'question_id' => $q['id'],
-                    'selected_option' => $sel,
-                    'is_correct' => strtoupper($sel) === strtoupper($q['correct_option'])
-                ];
-            }
-        }
-        if (count($processed) < count($questions)) {
-            $this->json(['error' => 'Responda todas as questões'], 400);
-        }
-
-        $answerModel = new CourseAnswer();
-        $answerModel->saveBatch((int)$enrollment['id'], (int)$moduleId, $processed);
-        $score = $answerModel->calculateScore((int)$enrollment['id'], (int)$moduleId);
-        $passed = $score >= 70;
-
-        $settings = new CompanySetting();
-        $courseModel = new Course();
-        $course = $courseModel->find($courseId);
-        $maxAttempts = (int) ($settings->get((int)$course['company_id'], 'max_attempts_course', 3));
-
-        $resultModel = new CourseModuleResult();
-        $existing = $resultModel->getResult((int)$enrollment['id'], (int)$moduleId);
-        $attemptsUsed = (int) ($existing['attempts'] ?? 0);
-        if ($existing && !$existing['passed'] && $attemptsUsed >= $maxAttempts) {
-            $this->json(['error' => 'Limite de tentativas atingido. Solicite liberação ao gestor.', 'locked' => true], 403);
-        }
-
-        $attemptsAfter = $attemptsUsed + 1;
-        $lock = (!$passed && $attemptsAfter >= $maxAttempts);
-
-        // Persistir tentativa do módulo
-        $resultModel->upsertAttempt((int)$enrollment['id'], (int)$moduleId, $score, $passed, $lock);
-        if ($lock) {
-            // Bloquear matrícula até liberação pelo gestor
-            $enrollmentModel->update((int)$enrollment['id'], ['is_locked' => 1]);
-        }
-
-        $this->json([
-            'success' => true,
-            'score' => $score,
-            'passed' => $passed,
-            'attempts' => $attemptsAfter,
-            'max_attempts' => $maxAttempts,
-            'locked' => $lock,
-            'message' => $passed
-                ? "Parabéns! Você foi aprovado com {$score}%!"
-                : ($lock ? "Você obteve {$score}%. Limite de tentativas atingido. Matrícula bloqueada. Solicite liberação ao gestor." : "Você obteve {$score}%. Nota mínima: 70%. Tente novamente."),
         ]);
     }
 

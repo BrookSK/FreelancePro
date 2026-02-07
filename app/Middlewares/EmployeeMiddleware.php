@@ -13,12 +13,12 @@ class EmployeeMiddleware
     public function handle(): bool
     {
         if (!isset($_SESSION['user_id'])) {
-            header('Location: /employee/login');
+            header('Location: /site-freelancePro/employee/login');
             exit;
         }
         
         if (($_SESSION['user']['user_type'] ?? '') !== 'employee') {
-            header('Location: /employee/login');
+            header('Location: /site-freelancePro/employee/login');
             exit;
         }
         

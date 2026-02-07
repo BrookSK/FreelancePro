@@ -18,13 +18,13 @@ class GuestMiddleware
             
             // Redirecionar para dashboard apropriado
             $redirects = [
-                'admin'        => '/admin/dashboard',
-                'company'      => '/dashboard',
-                'professional' => '/professional/dashboard',
-                'employee'     => '/employee/dashboard',
+                'admin'        => '/site-freelancePro/admin/dashboard',
+                'company'      => '/site-freelancePro/dashboard',
+                'professional' => '/site-freelancePro/professional/dashboard',
+                'employee'     => '/site-freelancePro/employee/dashboard',
             ];
             
-            $redirect = $redirects[$userType] ?? '/dashboard';
+            $redirect = $redirects[$userType] ?? '/site-freelancePro/dashboard';
             header('Location: ' . $redirect);
             exit;
         }

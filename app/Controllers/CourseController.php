@@ -7,10 +7,6 @@ use App\Models\Course;
 use App\Models\CourseModule;
 use App\Models\CourseLesson;
 use App\Models\CourseEnrollment;
-use App\Models\CourseQuestion;
-use App\Models\CourseAnswer;
-use App\Models\CourseModuleResult;
-use App\Models\CompanySetting;
 use App\Models\User;
 use App\Services\OpenAIService;
 
@@ -83,9 +79,38 @@ class CourseController extends Controller
         }
 
         try {
-            // MODO RÁPIDO: evitar timeouts no /courses/generate
-            // Pula chamadas à IA e cria uma estrutura mínima (4x3) imediatamente.
-            $structure = $this->createSkeletonStructure($title);
+            $aiService = new OpenAIService();
+
+            // Gerar estrutura do curso com conteúdo detalhado em HTML
+            $structurePrompt = "Você é um instrutor corporativo. Crie a estrutura COMPLETA de um curso online em português do Brasil sobre o tema abaixo.\n\n";
+            $structurePrompt .= "Título do curso: {$title}\n";
+            $structurePrompt .= "Descrição do curso: {$description}\n\n";
+            if (!empty($baseContent)) {
+                $structurePrompt .= "Conteúdo base / referências que devem ser usadas:\n{$baseContent}\n\n";
+            }
+            $structurePrompt .= "Regras importantes:\n";
+            $structurePrompt .= "- O curso deve ter EXATAMENTE 4 módulos e CADA módulo deve ter EXATAMENTE 3 aulas.\n";
+            $structurePrompt .= "- Para cada aula, escreva um conteúdo HTML COMPLETO em português, com pelo menos 6 parágrafos, usando tags <h2>, <h3>, <p>, <ul>, <li>, etc.\n";
+            $structurePrompt .= "- O HTML deve ser autocontido, sem usar <html>, <head> ou <body>.\n";
+            $structurePrompt .= "- Não inclua explicações fora do JSON.\n";
+            if ($videoSource === 'ai') {
+                $structurePrompt .= "Além disso, para cada aula indique também um campo video_url com uma URL COMPLETA de um vídeo público relevante no YouTube em português do Brasil (não escolha vídeos em outros idiomas), preferencialmente com domínio https://www.youtube.com.br/.\n";
+                $structurePrompt .= "Retorne APENAS um JSON VÁLIDO no seguinte formato, sem markdown, sem comentários, sem texto antes ou depois:\n";
+                $structurePrompt .= '{"modules":[{"title":"título do módulo","description":"descrição do módulo","lessons":[{"title":"título da aula","content_html":"conteúdo HTML completo da aula","video_url":"https://www.youtube.com/..."}]}]}';
+            } else {
+                $structurePrompt .= "Retorne APENAS um JSON VÁLIDO no seguinte formato, sem markdown, sem comentários, sem texto antes ou depois:\n";
+                $structurePrompt .= '{"modules":[{"title":"título do módulo","description":"descrição do módulo","lessons":[{"title":"título da aula","content_html":"conteúdo HTML completo da aula"}]}]}';
+            }
+
+            $structureJson = $aiService->generateContent($structurePrompt, $user['id']);
+
+            // Extrair JSON
+            preg_match('/\{[\s\S]*\}/', $structureJson, $matches);
+            $structure = json_decode($matches[0] ?? '{}', true);
+
+            if (empty($structure['modules'])) {
+                throw new \Exception('Não foi possível gerar a estrutura do curso');
+            }
 
             // Criar curso
             $courseId = $this->courseModel->create([
@@ -107,28 +132,13 @@ class CourseController extends Controller
 
                 $lessonOrder = 1;
                 foreach ($moduleData['lessons'] ?? [] as $lessonData) {
-                    $videoUrl = null;
-                    if ($videoSource === 'ai') {
-                        $candidate = $lessonData['video_url'] ?? null;
-                        if ($candidate && $this->isYoutubeUrl($candidate) && $this->isYoutubeVideoAvailable($candidate) && $this->isYoutubeVideoPortuguese($candidate)) {
-                            $videoUrl = $candidate;
-                        }
-                    }
-
                     $this->lessonModel->create([
                         'module_id' => $moduleId,
                         'title' => $lessonData['title'],
                         'content_html' => $lessonData['content_html'] ?? '',
-                        'video_url' => $videoUrl,
+                        'video_url' => $videoSource === 'ai' ? ($lessonData['video_url'] ?? null) : null,
                         'order_number' => $lessonOrder++,
                     ]);
-                }
-
-                // Gerar questionário padrão (evita chamadas lentas à IA na criação)
-                $questions = $this->buildDefaultQuestions($moduleData['title'] ?? 'Módulo');
-                if (!empty($questions)) {
-                    $courseQuestionModel = new CourseQuestion();
-                    $courseQuestionModel->createBatch($moduleId, $questions);
                 }
             }
 
@@ -180,32 +190,21 @@ class CourseController extends Controller
             }
             $structurePrompt .= "Regras importantes:\n";
             $structurePrompt .= "- O curso deve ter EXATAMENTE 4 módulos e CADA módulo deve ter EXATAMENTE 3 aulas.\n";
-            $structurePrompt .= "- Para cada aula, escreva um conteúdo HTML COMPLETO em português, com 3 a 4 parágrafos curtos, usando tags <h2>, <h3>, <p>, <ul>, <li>, etc.\n";
+            $structurePrompt .= "- Para cada aula, escreva um conteúdo HTML COMPLETO em português, com pelo menos 6 parágrafos, usando tags <h2>, <h3>, <p>, <ul>, <li>, etc.\n";
             $structurePrompt .= "- O HTML deve ser autocontido, sem usar <html>, <head> ou <body>.\n";
             $structurePrompt .= "- Não inclua explicações fora do JSON.\n";
-            $structurePrompt .= "- Seja conciso para evitar ultrapassar o limite de tokens.\n";
-            $structurePrompt .= "Além disso, para cada aula indique também um campo video_url com uma URL COMPLETA de um vídeo público RELEVANTE e ALINHADO ao tema da aula no YouTube, em português do Brasil. Não escolha vídeos em outros idiomas (inglês, espanhol, etc.). Se não houver uma boa opção em português do Brasil, defina video_url como null. Prefira links cujo domínio seja https://www.youtube.com.br/.\n";
+            $structurePrompt .= "Além disso, para cada aula indique também um campo video_url com uma URL COMPLETA de um vídeo público relevante no YouTube em português do Brasil (não escolha vídeos em outros idiomas), preferencialmente com domínio https://www.youtube.com.br/.\n";
             $structurePrompt .= "Retorne APENAS um JSON VÁLIDO no seguinte formato, sem markdown, sem comentários, sem texto antes ou depois:\n";
             $structurePrompt .= '{"modules":[{"title":"título do módulo","description":"descrição do módulo","lessons":[{"title":"título da aula","content_html":"conteúdo HTML completo da aula","video_url":"https://www.youtube.com/..."}]}]}';
 
-            try {
-                $structureJson = $aiService->generateContent($structurePrompt, $user['id'], 'regenerate_course');
+            $structureJson = $aiService->generateContent($structurePrompt, $user['id'], 'regenerate_course');
 
-                // Extrair JSON de forma robusta + fallback
-                $structure = $this->parseStructureJson($structureJson);
-                if (empty($structure['modules'])) {
-                    $retryPrompt = $structurePrompt . "\nIMPORTANTE: Responda SOMENTE com JSON válido exatamente no formato exigido (sem markdown). Reduza os textos (3-4 parágrafos por aula).";
-                    $structureJson = $aiService->generateContent($retryPrompt, $user['id'], 'regenerate_course_retry');
-                    $structure = $this->parseStructureJson($structureJson);
-                }
-            } catch (\Exception $ex) {
-                // Se der timeout/erro de API, continuamos com fallback abaixo
-                $structure = [];
-            }
+            // Extrair JSON
+            preg_match('/\{[\s\S]*\}/', $structureJson, $matches);
+            $structure = json_decode($matches[0] ?? '{}', true);
 
             if (empty($structure['modules'])) {
-                // Fallback: criar estrutura mínima sem depender da IA
-                $structure = $this->createSkeletonStructure($title);
+                throw new \Exception('Não foi possível gerar a nova estrutura do curso');
             }
 
             // Remover módulos (e aulas/questões relacionadas via FK) atuais
@@ -223,45 +222,13 @@ class CourseController extends Controller
 
                 $lessonOrder = 1;
                 foreach ($moduleData['lessons'] ?? [] as $lessonData) {
-                    $candidate = $lessonData['video_url'] ?? null;
-                    $plain = strip_tags($lessonData['content_html'] ?? '');
-                    $videoUrl = null;
-                    if ($candidate && $this->isYoutubeUrl($candidate) && $this->isYoutubeVideoAvailable($candidate) && $this->isYoutubeVideoPortuguese($candidate)) {
-                        $videoUrl = $candidate;
-                    } else {
-                        if ($plain === '') {
-                            $plain = trim(strip_tags(($moduleData['description'] ?? '') . ' ' . $description));
-                        }
-                        if ($plain !== '') {
-                            $videoUrl = $this->suggestYoutubePtBrVideo($title, $lessonData['title'] ?? '', $plain, $user['id']);
-                        }
-                    }
-
                     $this->lessonModel->create([
                         'module_id' => $moduleId,
                         'title' => $lessonData['title'],
                         'content_html' => $lessonData['content_html'] ?? '',
-                        'video_url' => $videoUrl,
+                        'video_url' => $lessonData['video_url'] ?? null,
                         'order_number' => $lessonOrder++,
                     ]);
-                }
-
-                // Gerar questionário do módulo com IA
-                $moduleHtml = '';
-                foreach ($moduleData['lessons'] ?? [] as $lessonData) {
-                    $moduleHtml .= (string)($lessonData['content_html'] ?? '');
-                    $moduleHtml .= "\n\n";
-                }
-                if (trim(strip_tags($moduleHtml)) === '') {
-                    $moduleHtml = (string)($moduleData['description'] ?? '') . "\n" . $title . ' - ' . $description;
-                }
-                $questions = $this->generateModuleQuestions($moduleHtml, $user['id']);
-                if (empty($questions)) {
-                    $questions = $this->buildDefaultQuestions($moduleData['title'] ?? 'Módulo');
-                }
-                if (!empty($questions)) {
-                    $courseQuestionModel = new CourseQuestion();
-                    $courseQuestionModel->createBatch($moduleId, $questions);
                 }
             }
 
@@ -279,9 +246,8 @@ class CourseController extends Controller
     /**
      * Visualizar curso
      */
-    public function show($id): void
+    public function show(int $id): void
     {
-        $id = (int) $id;
         $user = $this->currentUser();
         $course = $this->courseModel->getComplete($id);
 
@@ -326,14 +292,13 @@ class CourseController extends Controller
     /**
      * Publicar curso
      */
-    public function publish($id): void
+    public function publish(int $id): void
     {
         if (!$this->validateCsrf()) {
             $this->json(['error' => 'Token inválido'], 400);
         }
 
         $user = $this->currentUser();
-        $id = (int) $id;
         $course = $this->courseModel->find($id);
 
         if (!$course || $course['company_id'] != $user['id']) {
@@ -346,82 +311,6 @@ class CourseController extends Controller
             'success' => true,
             'message' => 'Curso publicado com sucesso!',
         ]);
-    }
-
-    /**
-     * Preencher conteúdos e questionários ausentes
-     */
-    public function fillMissing($id): void
-    {
-        if (!$this->validateCsrf()) {
-            $this->flash('error', 'Token inválido. Tente novamente.');
-            $this->redirect('courses');
-        }
-
-        $user = $this->currentUser();
-        $id = (int) $id;
-        $course = $this->courseModel->find($id);
-
-        if (!$course || $course['company_id'] != $user['id']) {
-            $this->flash('error', 'Curso não encontrado.');
-            $this->redirect('courses');
-        }
-
-        $updatedLessons = 0;
-        $createdQuizzes = 0;
-
-        try {
-            $modules = $this->moduleModel->getByCourse($id);
-            $ai = new OpenAIService();
-
-            foreach ($modules as $module) {
-                $lessons = $this->lessonModel->getByModule((int)$module['id']);
-                foreach ($lessons as $lesson) {
-                    $current = trim((string)($lesson['content_html'] ?? ''));
-                    if ($current === '') {
-                        $prompt = "Escreva conteúdo HTML autocontido (sem <html>, <head> ou <body>) para uma aula de curso em português do Brasil.\n";
-                        $prompt .= "Curso: {$course['title']}\n";
-                        $prompt .= "Módulo: {$module['title']}\n";
-                        $prompt .= "Aula: {$lesson['title']}\n";
-                        $prompt .= "Use 3 a 4 parágrafos curtos com <h2>, <h3>, <p>, e listas quando útil. Responda apenas com HTML.";
-                        try {
-                            $html = $ai->generateContent($prompt, $user['id'], 'fill_lesson_content', 8);
-                            $html = trim((string)$html);
-                            if ($html !== '') {
-                                if (preg_match('/^```[\w-]*\s*/', $html)) {
-                                    $html = preg_replace('/^```[\w-]*\s*/', '', $html);
-                                    $html = preg_replace('/```\s*$/', '', $html);
-                                    $html = trim($html);
-                                }
-                                if ($html !== '') {
-                                    $this->lessonModel->update((int)$lesson['id'], ['content_html' => $html]);
-                                    $updatedLessons++;
-                                }
-                            }
-                        } catch (\Exception $e) {
-                            // ignorar falha desta aula
-                        }
-                    }
-                }
-
-                $existing = (new CourseQuestion())->getByModule((int)$module['id']);
-                if (empty($existing)) {
-                    $qs = $this->buildDefaultQuestions((string)$module['title']);
-                    if (!empty($qs)) {
-                        $cq = new CourseQuestion();
-                        $cq->createBatch((int)$module['id'], $qs);
-                        $createdQuizzes++;
-                    }
-                }
-            }
-
-            $this->courseModel->updateCounters($id);
-            $this->flash('success', "Conteúdo preenchido em {$updatedLessons} aula(s). Questionários criados: {$createdQuizzes}.");
-            $this->redirect("courses/{$id}/manage");
-        } catch (\Exception $e) {
-            $this->flash('error', 'Falha ao preencher conteúdos: ' . $e->getMessage());
-            $this->redirect("courses/{$id}/manage");
-        }
     }
 
     /**
@@ -727,14 +616,9 @@ class CourseController extends Controller
 
         curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        $err = curl_error($ch);
         curl_close($ch);
 
-        // Se API respondeu 200, está disponível
-        if ($httpCode === 200) return true;
-        // Ambientes com bloqueio de rede podem falhar nessa verificação: ser permissivo
-        if (!empty($err) || $httpCode === 0 || $httpCode === null) return true;
-        return false;
+        return $httpCode === 200;
     }
 
     /**
@@ -752,14 +636,13 @@ class CourseController extends Controller
         ]);
 
         $json = @file_get_contents($oembedUrl, false, $context);
-        // Se não for possível checar, ser permissivo para não bloquear
         if ($json === false) {
-            return true;
+            return false;
         }
 
         $data = json_decode($json, true);
         if (!is_array($data) || empty($data['title'])) {
-            return true;
+            return false;
         }
 
         $title = mb_strtolower($data['title'], 'UTF-8');
@@ -776,169 +659,7 @@ class CourseController extends Controller
             }
         }
 
-        // Se não encontrou fortes indícios de PT-BR, ainda assim permitir
-        return true;
-    }
-
-    protected function generateModuleQuestions(string $moduleHtml, int $userId): array
-    {
-        $plain = trim(strip_tags($moduleHtml));
-        if ($plain === '') return [];
-        try {
-            $aiService = new OpenAIService();
-            $prompt = "Com base no conteúdo abaixo, crie 8 a 10 perguntas de múltipla escolha (4 alternativas: A, B, C, D) EM PORTUGUÊS DO BRASIL para avaliar o aprendizado do módulo. Inclua gabarito e breve explicação.\n\n";
-            $prompt .= "Conteúdo:\n" . mb_substr($plain, 0, 6000) . "\n\n";
-            $prompt .= "Retorne SOMENTE um JSON válido neste formato (sem markdown):\n";
-            $prompt .= '[{"question_text":"pergunta","option_a":"opção A","option_b":"opção B","option_c":"opção C","option_d":"opção D","correct_option":"A","explanation":"explicação da resposta correta"}]';
-            $json = $aiService->generateContent($prompt, $userId, 'course_module_questions');
-            preg_match('/\[[\s\S]*\]/', $json, $m);
-            $arr = json_decode($m[0] ?? '[]', true);
-            return is_array($arr) ? $arr : [];
-        } catch (\Exception $e) {
-            return [];
-        }
-    }
-
-    public function unlockEnrollment(int $enrollmentId): void
-    {
-        if (!$this->validateCsrf()) {
-            $this->json(['error' => 'Token inválido'], 400);
-        }
-        $user = $this->currentUser();
-        $enrollment = (new CourseEnrollment())->find($enrollmentId);
-        if (!$enrollment) {
-            $this->json(['error' => 'Matrícula não encontrada'], 404);
-        }
-        // Verificar se matrícula pertence a um curso da empresa logada
-        $sql = "SELECT c.* FROM courses c JOIN course_enrollments e ON e.course_id = c.id WHERE e.id = :id LIMIT 1";
-        $course = $this->courseModel->query($sql, ['id' => $enrollmentId])[0] ?? null;
-        if (!$course || $course['company_id'] != $user['id']) {
-            $this->json(['error' => 'Sem permissão'], 403);
-        }
-        // Desbloquear matrícula e resultados de módulos
-        (new CourseEnrollment())->update($enrollmentId, ['is_locked' => 0]);
-        (new CourseModuleResult())->execute('UPDATE course_module_results SET locked = 0 WHERE enrollment_id = :e', ['e' => $enrollmentId]);
-        $this->json(['success' => true, 'message' => 'Matrícula desbloqueada.']);
-    }
-
-    /**
-     * Extrai de forma robusta o JSON de estrutura do curso retornado pela IA.
-     */
-    protected function parseStructureJson(string $structureJson): array
-    {
-        $raw = trim($structureJson);
-        // Remover cercas de código (```json ... ```)
-        if (preg_match('/```+[\w-]*\s*([\s\S]*?)```/m', $raw, $m)) {
-            $raw = $m[1];
-        }
-        // Tentar extrair objeto contendo a chave "modules"
-        if (preg_match('/\{\s*\"modules\"\s*:\s*\[[\s\S]*?\]\s*\}/m', $raw, $m)) {
-            $decoded = json_decode($m[0], true);
-            if (is_array($decoded)) {
-                return $decoded;
-            }
-        }
-        // Tentar decodificar a string inteira
-        $decoded = json_decode($raw, true);
-        if (is_array($decoded) && isset($decoded['modules']) && is_array($decoded['modules'])) {
-            return $decoded;
-        }
-        // Tentar pegar o primeiro objeto JSON na string
-        if (preg_match('/\{[\s\S]*\}/', $raw, $m)) {
-            $decoded = json_decode($m[0], true);
-            if (is_array($decoded) && isset($decoded['modules'])) {
-                return $decoded;
-            }
-        }
-        // Se vier somente um array de módulos, embrulhar
-        if (preg_match('/\[[\s\S]*\]/', $raw, $m)) {
-            $arr = json_decode($m[0], true);
-            if (is_array($arr)) {
-                return ['modules' => $arr];
-            }
-        }
-        return [];
-    }
-
-    /**
-     * Fallback: cria estrutura mínima de 4 módulos x 3 aulas sem depender da IA
-     */
-    protected function createSkeletonStructure(string $courseTitle): array
-    {
-        $modules = [];
-        $moduleTitles = [
-            'Introdução',
-            'Planejamento e Ferramentas',
-            'Construção na Prática',
-            'Publicação e Melhores Práticas'
-        ];
-        for ($i = 0; $i < 4; $i++) {
-            $lessons = [];
-            for ($j = 1; $j <= 3; $j++) {
-                $lessons[] = [
-                    'title' => 'Aula ' . $j . ': ' . $moduleTitles[$i],
-                    // conteúdo vazio para evitar tempo extra de geração; poderá ser editado depois
-                    'content_html' => ''
-                ];
-            }
-            $modules[] = [
-                'title' => 'Módulo ' . ($i + 1) . ': ' . $moduleTitles[$i] . ' - ' . $courseTitle,
-                'description' => 'Conteúdos essenciais sobre ' . $moduleTitles[$i] . '.',
-                'lessons' => $lessons,
-            ];
-        }
-        return ['modules' => $modules];
-    }
-
-    /**
-     * Fallback: cria 8 questões padrão quando a IA não retorna perguntas.
-     */
-    protected function buildDefaultQuestions(string $moduleTitle): array
-    {
-        $qs = [];
-        for ($i = 1; $i <= 8; $i++) {
-            $qs[] = [
-                'question_text' => "Sobre: {$moduleTitle} — marque a alternativa mais adequada.",
-                'option_a' => 'Afirmativa correta (padrão)',
-                'option_b' => 'Alternativa incorreta',
-                'option_c' => 'Alternativa incorreta',
-                'option_d' => 'Alternativa incorreta',
-                'correct_option' => 'A',
-                'explanation' => 'Resposta padrão gerada automaticamente.'
-            ];
-        }
-        return $qs;
-    }
-
-    protected function suggestYoutubePtBrVideo(string $courseTitle, string $lessonTitle, string $plainContent, int $userId): ?string
-    {
-        try {
-            $aiService = new OpenAIService();
-            $maxAttempts = 3;
-            for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
-                $prompt = "Você é um especialista em treinamento corporativo. Indique APENAS uma URL COMPLETA de um vídeo público no YouTube em português do Brasil que seja MUITO RELEVANTE para a aula abaixo. O vídeo deve ser claramente sobre o mesmo tema.\n\n";
-                $prompt .= "Título do curso: {$courseTitle}\n";
-                $prompt .= "Título da aula: {$lessonTitle}\n\n";
-                $prompt .= "Resumo do conteúdo da aula:\n" . mb_substr($plainContent, 0, 600);
-                $prompt .= "\n\nRegras importantes:\n";
-                $prompt .= "- O vídeo deve ser educacional/explicativo, adequado para treinamento corporativo.\n";
-                $prompt .= "- O tema deve bater claramente com o tema da aula.\n";
-                $prompt .= "- O vídeo deve estar em português do Brasil. Não escolha vídeos em outros idiomas. Prefira links https://www.youtube.com.br/.\n";
-                $prompt .= "Responda APENAS com a URL do YouTube.\n";
-
-                $response = $aiService->generateContent($prompt, $userId, 'lesson_video_suggestion');
-                if (!preg_match('/https?:\/\/\S+/', $response, $matches)) {
-                    continue;
-                }
-                $url = $matches[0];
-                if ($this->isYoutubeUrl($url) && $this->isYoutubeVideoAvailable($url) && $this->isYoutubeVideoPortuguese($url)) {
-                    return $url;
-                }
-            }
-        } catch (\Exception $e) {
-            // silencioso
-        }
-        return null;
+        return false;
     }
 
     /**

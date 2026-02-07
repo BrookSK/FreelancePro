@@ -112,21 +112,6 @@ class PlaybookAssignment extends Model
     }
 
     /**
-     * Registrar tentativa com atualização de status e contagem de tentativas
-     */
-    public function recordAttempt(int $assignmentId, float $score, bool $passed): bool
-    {
-        $status = $passed ? 'completed' : 'failed';
-        $sql = "UPDATE {$this->table} SET attempts = IFNULL(attempts,0) + 1, score = :score, passed = :passed, status = :status, completed_at = CASE WHEN :passed = 1 THEN NOW() ELSE completed_at END WHERE id = :id";
-        return $this->execute($sql, [
-            'score' => $score,
-            'passed' => $passed ? 1 : 0,
-            'status' => $status,
-            'id' => $assignmentId,
-        ]);
-    }
-
-    /**
      * Estatísticas por empresa
      */
     public function getStatsByCompany(int $companyId): array
@@ -142,25 +127,5 @@ class PlaybookAssignment extends Model
         
         $result = $this->query($sql, ['company_id' => $companyId]);
         return $result[0] ?? [];
-    }
-
-    public function deleteByPlaybook(int $playbookId): bool
-    {
-        $this->beginTransaction();
-        try {
-            $this->execute(
-                "DELETE FROM playbook_answers WHERE assignment_id IN (SELECT id FROM {$this->table} WHERE playbook_id = :pid)",
-                ['pid' => $playbookId]
-            );
-            $this->execute(
-                "DELETE FROM {$this->table} WHERE playbook_id = :pid",
-                ['pid' => $playbookId]
-            );
-            $this->commit();
-            return true;
-        } catch (\Exception $e) {
-            $this->rollback();
-            return false;
-        }
     }
 }
